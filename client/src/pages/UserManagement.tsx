@@ -1,0 +1,435 @@
+import { useState } from "react";
+import { useQuery, useMutation } from "@tanstack/react-query";
+import { exportToExcel } from "@/lib/exportUtils";
+import { queryClient } from "@/lib/queryClient";
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
+import UserForm from "@/components/UserForm";
+import { ChangePasswordDialog } from "@/components/ChangePasswordDialog";
+import AnalyticsCard from "@/components/AnalyticsCard";
+import { useAuth } from "@/hooks/useAuth";
+import { useToast } from "@/hooks/use-toast";
+import { useLocation } from "wouter";
+import { apiRequest } from "@/lib/queryClient";
+import { DataTablePagination } from "@/components/DataTablePagination";
+import { Download } from "lucide-react";
+
+export default function UserManagement() {
+  const { user: currentUser } = useAuth();
+  const { toast } = useToast();
+  const [, setLocation] = useLocation();
+  const [searchQuery, setSearchQuery] = useState("");
+  const [selectedRole, setSelectedRole] = useState("");
+  const [showAddUser, setShowAddUser] = useState(false);
+  const [editingUser, setEditingUser] = useState(null);
+  const [changePasswordUser, setChangePasswordUser] = useState<{id: string, name: string} | null>(null);
+  
+  // Pagination state
+  const [currentPage, setCurrentPage] = useState(1);
+  const [itemsPerPage, setItemsPerPage] = useState(10);
+
+  const { data: usersResponse, isLoading } = useQuery({
+    queryKey: ["/api/users", { 
+      page: currentPage, 
+      limit: itemsPerPage, 
+      search: searchQuery || undefined,
+      role: selectedRole || undefined 
+    }],
+    queryFn: async () => {
+      const params = new URLSearchParams({
+        page: currentPage.toString(),
+        limit: itemsPerPage.toString(),
+      });
+      
+      if (searchQuery) params.append('search', searchQuery);
+      if (selectedRole && selectedRole !== "all") params.append('role', selectedRole);
+      
+      const response = await apiRequest("GET", `/api/users?${params.toString()}`);
+      return await response.json();
+    },
+  });
+
+  const users = usersResponse?.data || [];
+  const pagination = usersResponse?.pagination || { page: 1, limit: 10, total: 0, totalPages: 0 };
+
+  // Pagination handlers
+  const handlePageChange = (page: number) => {
+    setCurrentPage(page);
+  };
+
+  const handleItemsPerPageChange = (newItemsPerPage: number) => {
+    setItemsPerPage(newItemsPerPage);
+    setCurrentPage(1); // Reset to first page when changing items per page
+  };
+
+  // Reset page when filters change
+  const handleSearchChange = (newSearchQuery: string) => {
+    setSearchQuery(newSearchQuery);
+    setCurrentPage(1);
+  };
+
+  const handleRoleChange = (newRole: string) => {
+    setSelectedRole(newRole);
+    setCurrentPage(1);
+  };
+
+  const handleExport = () => {
+    if (!usersResponse?.data?.length) return;
+    
+    // Prepare data for export
+    const exportData = usersResponse.data.map((user: any) => ({
+      'User ID': user.id,
+      'Name': user.name,
+      'Email': user.email,
+      'Role': user.role,
+      'Specialty': user.specialty || 'N/A',
+      'Status': user.isActive ? 'Active' : 'Inactive',
+      'Created Date': new Date(user.createdAt).toLocaleDateString(),
+      'Last Updated': new Date(user.updatedAt).toLocaleDateString()
+    }));
+
+    exportToExcel({
+      data: exportData,
+      filename: `users-list-${new Date().toISOString().split('T')[0]}`,
+      sheetName: 'Users',
+      dateFields: ['Created Date', 'Last Updated']
+    });
+  };
+
+  // Since filtering is now handled by backend, we use the returned users directly
+  const filteredUsers = users;
+
+  const userStats = {
+    total: pagination.total,
+    doctors: Array.isArray(users) ? users.filter((u: any) => u.role === 'user').length : 0,
+    admins: Array.isArray(users) ? users.filter((u: any) => u.role === 'admin' || u.role === 'super_admin').length : 0,
+  };
+
+  const deleteUserMutation = useMutation({
+    mutationFn: async (userId: string) => {
+      await apiRequest("DELETE", `/api/users/${userId}`, {});
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/users"] });
+      toast({
+        title: "Success",
+        description: "User deleted successfully",
+      });
+    },
+    onError: () => {
+      toast({
+        title: "Error", 
+        description: "Failed to delete user",
+        variant: "destructive",
+      });
+    },
+  });
+
+  const roleColors = {
+    super_admin: "bg-destructive text-destructive-foreground",
+    admin: "bg-chart-2 text-white",
+    user: "bg-primary text-primary-foreground",
+  };
+
+  const canManageUsers = (currentUser as any)?.role === 'super_admin' || (currentUser as any)?.role === 'admin';
+
+  return (
+    <div className="p-6 bg-gradient-to-br from-blue-50/50 to-white min-h-screen" data-testid="users-view">
+      <div className="mb-2">
+        <div className="flex items-center justify-between">
+          <div className="flex items-center space-x-2">
+            <div>
+              <h1 className="text-lg font-bold text-gray-900">User Management</h1>
+            </div>
+            <div className="text-xs text-gray-600">
+              System Users & Access Control
+            </div>
+            {!canManageUsers && (
+              <div className="text-xs text-amber-600">
+                <i className="fas fa-info-circle mr-1"></i>
+                Admin role required
+              </div>
+            )}
+          </div>
+          <div className="text-xs text-gray-500">
+            {new Date().toLocaleDateString()}
+          </div>
+        </div>
+      </div>
+
+      <div className="flex items-center justify-between mb-4">
+        <div>
+          <p className="text-sm text-muted-foreground">
+            Manage user accounts, roles, and permissions
+          </p>
+        </div>
+        {canManageUsers ? (
+          <Dialog open={showAddUser} onOpenChange={setShowAddUser}>
+            <DialogTrigger asChild>
+              <Button className="flex items-center space-x-2" data-testid="button-add-user">
+                <i className="fas fa-plus"></i>
+                <span>Add User</span>
+              </Button>
+            </DialogTrigger>
+            <DialogContent className="max-w-2xl">
+              <DialogHeader>
+                <DialogTitle>Add New User</DialogTitle>
+              </DialogHeader>
+              <UserForm 
+                onSuccess={() => setShowAddUser(false)}
+                onCancel={() => setShowAddUser(false)}
+              />
+            </DialogContent>
+          </Dialog>
+        ) : (
+          <Button 
+            className="flex items-center space-x-2" 
+            disabled
+            title="Requires Admin or Super Admin role"
+            data-testid="button-add-user-disabled"
+          >
+            <i className="fas fa-plus"></i>
+            <span>Add User</span>
+          </Button>
+        )}
+      </div>
+      
+      {/* User Stats */}
+      <div className="grid grid-cols-1 md:grid-cols-3 gap-3 mb-4">
+        <AnalyticsCard
+          title="Total Users"
+          value={userStats.total}
+          icon="fa-users"
+          color="primary"
+        />
+        
+        <AnalyticsCard
+          title="Active Doctors"
+          value={userStats.doctors}
+          icon="fa-user-md"
+          color="chart-1"
+        />
+        
+        <AnalyticsCard
+          title="Administrators"
+          value={userStats.admins}
+          icon="fa-user-shield"
+          color="chart-2"
+        />
+      </div>
+      
+      {/* Users Table */}
+      <Card className="border-blue-100 shadow-sm">
+        <CardHeader className="pb-2">
+          <div className="flex items-center justify-between">
+            <CardTitle className="text-sm font-semibold">All Users</CardTitle>
+            <div className="flex items-center space-x-4">
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={handleExport}
+                className="h-8 px-2"
+                data-testid="button-export-users"
+              >
+                <Download className="w-3 h-3" />
+              </Button>
+              <Input
+                type="text"
+                placeholder="Search users..."
+                value={searchQuery}
+                onChange={(e) => handleSearchChange(e.target.value)}
+                className="w-48 h-8 text-sm"
+                data-testid="input-search-users"
+              />
+              <Select value={selectedRole} onValueChange={handleRoleChange}>
+                <SelectTrigger className="w-32 h-8 text-sm" data-testid="select-role-filter">
+                  <SelectValue placeholder="All Roles" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="all">All Roles</SelectItem>
+                  <SelectItem value="super_admin">Super Admin</SelectItem>
+                  <SelectItem value="admin">Admin</SelectItem>
+                  <SelectItem value="user">Doctor</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+          </div>
+        </CardHeader>
+        <CardContent>
+          {isLoading ? (
+            <div className="space-y-4">
+              {[...Array(5)].map((_, i) => (
+                <div key={i} className="animate-pulse flex items-center space-x-4 p-4">
+                  <div className="h-10 w-10 bg-muted rounded-full"></div>
+                  <div className="flex-1 space-y-2">
+                    <div className="h-4 bg-muted rounded w-1/4"></div>
+                    <div className="h-3 bg-muted rounded w-1/6"></div>
+                  </div>
+                </div>
+              ))}
+            </div>
+          ) : filteredUsers?.length > 0 ? (
+            <div className="overflow-x-auto">
+              <table className="w-full">
+                <thead className="bg-muted">
+                  <tr>
+                    <th className="text-left p-2 text-xs font-medium text-muted-foreground">User</th>
+                    <th className="text-left p-2 text-xs font-medium text-muted-foreground">Role</th>
+                    <th className="text-left p-2 text-xs font-medium text-muted-foreground">Specialty</th>
+                    <th className="text-left p-2 text-xs font-medium text-muted-foreground">Status</th>
+                    <th className="text-left p-2 text-xs font-medium text-muted-foreground">Created</th>
+                    {canManageUsers && (
+                      <th className="text-left p-2 text-xs font-medium text-muted-foreground">Actions</th>
+                    )}
+                  </tr>
+                </thead>
+                <tbody>
+                  {filteredUsers.map((user: any) => {
+                    const initials = `${user.firstName?.[0] || ''}${user.lastName?.[0] || ''}` || 
+                                    user.email?.[0]?.toUpperCase() || '?';
+                    
+                    return (
+                      <tr 
+                        key={user.id} 
+                        className="border-b border-border hover:bg-muted/50 cursor-pointer"
+                        onClick={() => setLocation(`/users/${user.id}`)}
+                        data-testid={`user-row-${user.id}`}
+                      >
+                        <td className="p-2">
+                          <div className="flex items-center space-x-2">
+                            <div className="w-6 h-6 bg-primary rounded-full flex items-center justify-center">
+                              <span className="text-xs font-medium text-primary-foreground">{initials}</span>
+                            </div>
+                            <div>
+                              <p className="text-sm font-medium text-foreground">
+                                {user.firstName || user.lastName 
+                                  ? `${user.firstName || ''} ${user.lastName || ''}`.trim()
+                                  : user.email
+                                }
+                              </p>
+                              <p className="text-xs text-muted-foreground">{user.email}</p>
+                            </div>
+                          </div>
+                        </td>
+                        <td className="p-2">
+                          <span className={`inline-flex items-center px-2 py-1 rounded-full text-xs font-medium capitalize ${roleColors[user.role as keyof typeof roleColors] || 'bg-muted text-muted-foreground'}`}>
+                            {user.role?.replace('_', ' ')}
+                          </span>
+                        </td>
+                        <td className="p-2 text-xs text-foreground capitalize">
+                          {user.specialty || '-'}
+                        </td>
+                        <td className="p-2">
+                          <span className={`inline-flex items-center px-2 py-1 rounded-full text-xs font-medium ${user.isActive ? 'bg-accent text-accent-foreground' : 'bg-muted text-muted-foreground'}`}>
+                            {user.isActive ? 'Active' : 'Inactive'}
+                          </span>
+                        </td>
+                        <td className="p-2 text-xs text-muted-foreground">
+                          {new Date(user.createdAt).toLocaleDateString()}
+                        </td>
+                        {canManageUsers && (
+                          <td className="p-4">
+                            <div className="flex items-center space-x-2">
+                              <Button 
+                                variant="ghost" 
+                                size="sm"
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  setEditingUser(user);
+                                }}
+                                data-testid={`button-edit-user-${user.id}`}
+                              >
+                                <i className="fas fa-edit"></i>
+                              </Button>
+                              <Button 
+                                variant="ghost" 
+                                size="sm"
+                                className="text-muted-foreground hover:text-foreground"
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  setChangePasswordUser({
+                                    id: user.id,
+                                    name: user.firstName && user.lastName 
+                                      ? `${user.firstName} ${user.lastName}` 
+                                      : user.email
+                                  });
+                                }}
+                              >
+                                <i className="fas fa-key"></i>
+                              </Button>
+                              {user.id !== (currentUser as any)?.id && (
+                                <Button 
+                                  variant="ghost" 
+                                  size="sm"
+                                  className="text-muted-foreground hover:text-destructive"
+                                  onClick={(e) => {
+                                    e.stopPropagation();
+                                    deleteUserMutation.mutate(user.id);
+                                  }}
+                                  data-testid={`button-delete-user-${user.id}`}
+                                >
+                                  <i className="fas fa-trash"></i>
+                                </Button>
+                              )}
+                            </div>
+                          </td>
+                        )}
+                      </tr>
+                    );
+                  })}
+                </tbody>
+              </table>
+            </div>
+          ) : (
+            <div className="text-center py-12">
+              <i className="fas fa-users text-4xl text-muted-foreground mb-4"></i>
+              <h3 className="text-lg font-medium text-foreground mb-2">No Users Found</h3>
+              <p className="text-muted-foreground">
+                {searchQuery || selectedRole ? "No users match your current filters." : "No users available."}
+              </p>
+            </div>
+          )}
+        </CardContent>
+        
+        {/* Pagination */}
+        <DataTablePagination
+          currentPage={pagination.page}
+          totalPages={pagination.totalPages}
+          totalItems={pagination.total}
+          itemsPerPage={pagination.limit}
+          onPageChange={handlePageChange}
+          onItemsPerPageChange={handleItemsPerPageChange}
+        />
+      </Card>
+
+      {/* Edit User Dialog */}
+      {editingUser && (
+        <Dialog open={!!editingUser} onOpenChange={() => setEditingUser(null)}>
+          <DialogContent className="max-w-2xl">
+            <DialogHeader>
+              <DialogTitle>Edit User</DialogTitle>
+            </DialogHeader>
+            <UserForm 
+              user={editingUser}
+              onSuccess={() => setEditingUser(null)}
+              onCancel={() => setEditingUser(null)}
+            />
+          </DialogContent>
+        </Dialog>
+      )}
+
+      {/* Change Password Dialog */}
+      {changePasswordUser && (
+        <ChangePasswordDialog
+          isOpen={!!changePasswordUser}
+          onOpenChange={() => setChangePasswordUser(null)}
+          userId={changePasswordUser.id}
+          userName={changePasswordUser.name}
+        />
+      )}
+    </div>
+  );
+}
