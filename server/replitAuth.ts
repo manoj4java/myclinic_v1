@@ -18,6 +18,12 @@ export interface AuthenticatedRequest extends Request {
 const JWT_SECRET = process.env.JWT_SECRET || "myclinic-dev-secret-key-change-in-production";
 const ISSUER = process.env.JWT_ISSUER || "https://myclinic.local";
 
+// Log JWT configuration for debugging
+console.log("[JWT Config] Environment:", process.env.NODE_ENV);
+console.log("[JWT Config] JWT_SECRET source:", process.env.JWT_SECRET ? "environment" : "default");
+console.log("[JWT Config] JWT_SECRET length:", JWT_SECRET.length);
+console.log("[JWT Config] ISSUER:", ISSUER);
+
 // Validate JWT configuration
 if (!process.env.JWT_SECRET && process.env.NODE_ENV === 'production') {
   console.error('Warning: JWT_SECRET not set in production environment!');
@@ -41,10 +47,14 @@ function generateJwt(user: any, sessionId?: string) {
     sessionId: sessionId,
     claims: { sub: user.id, email: user.email, sessionId: sessionId },
   };
-  return jwt.sign(payload, JWT_SECRET, {
+  console.log("[JWT] Generating token with issuer:", ISSUER);
+  console.log("[JWT] Payload:", { id: payload.id, email: payload.email, sessionId: payload.sessionId });
+  const token = jwt.sign(payload, JWT_SECRET, {
     expiresIn: "1h",
     issuer: ISSUER,
   });
+  console.log("[JWT] Token generated successfully, length:", token.length);
+  return token;
 }
 
 /**
@@ -52,8 +62,20 @@ function generateJwt(user: any, sessionId?: string) {
  */
 function verifyJwt(token: string) {
   try {
-    return jwt.verify(token, JWT_SECRET, { issuer: ISSUER });
+    console.log("[JWT] Verifying token with issuer:", ISSUER);
+    console.log("[JWT] JWT_SECRET length:", JWT_SECRET.length);
+    const decoded = jwt.verify(token, JWT_SECRET, { issuer: ISSUER });
+    console.log("[JWT] Token verified successfully");
+    return decoded;
   } catch (error) {
+    console.error("[JWT] Token verification failed:", error);
+    console.error("[JWT] Error details:", {
+      message: (error as Error).message,
+      name: (error as Error).name,
+      tokenLength: token?.length || 0,
+      issuer: ISSUER,
+      secretPresent: !!JWT_SECRET
+    });
     throw new Error("Invalid or expired token");
   }
 }
@@ -357,14 +379,18 @@ export async function setupAuth(app: Express) {
  */
 export const isAuthenticated: RequestHandler = async (req: AuthenticatedRequest, res, next) => {
   try {
+    console.log("[Auth] Processing authentication middleware");
     const authHeader = req.headers.authorization;
     if (!authHeader?.startsWith("Bearer ")) {
+      console.log("[Auth] No valid Bearer token in authorization header");
       return res.status(401).json({ message: "Unauthorized" });
     }
 
     const token = authHeader.split(" ")[1];
+    console.log("[Auth] Extracted token, length:", token.length);
     const decoded = verifyJwt(token) as any;
     req.user = decoded; // attach decoded JWT payload to request
+    console.log("[Auth] User authenticated:", { id: decoded.id, email: decoded.email });
     
     // For existing users without sessions, create one automatically
     if (decoded.id && !decoded.sessionId) {
