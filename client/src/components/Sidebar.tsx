@@ -26,6 +26,7 @@ const navigationItems: NavigationItem[] = [
   { path: "/add-patient", label: "Add Patient", icon: "fa-user-plus", key: "patients" },
   { path: "/notifications", label: "Notifications", icon: "fa-bell", key: "notifications" },
   { path: "/reports", label: "Medical Reports", icon: "fa-file-medical", key: "reports" },
+  { path: "/report-templates", label: "Report Templates", icon: "fa-file-text", key: "report-templates" },
   { path: "/analytics", label: "Analytics", icon: "fa-chart-bar", key: "analytics" },
   { path: "/users", label: "User Management", icon: "fa-user-cog", key: "user-management" },
   { path: "/settings", label: "Settings", icon: "fa-cog", key: "settings" },

@@ -84,7 +84,7 @@ export const patients = pgTable("patients", {
   doctorId: varchar("doctor_id").references(() => users.id),
   // New fields for the updated requirements
   emergency: boolean("emergency").default(false),
-  reportStatus: varchar("report_status").default("pending"), // pending, completed, reviewed
+  reportStatus: varchar("report_status").default("N/A"), // N/A, Reporting, Draft, Completed, Reviewed, Finalized
   studyDate: timestamp("study_date").defaultNow(), // date and time when study was created
   studyTime: varchar("study_time"), // time portion of study (for display purposes)
   accession: varchar("accession"), // accession number
@@ -199,6 +199,61 @@ export const notificationsRelations = relations(notifications, ({ one }) => ({
   }),
 }));
 
+// Patient Comments table
+export const patientComments = pgTable("patient_comments", {
+  id: uuid("id").primaryKey().default(sql`gen_random_uuid()`),
+  patientId: uuid("patient_id").references(() => patients.id).notNull(),
+  doctorId: varchar("doctor_id").references(() => users.id).notNull(),
+  comment: text("comment").notNull(),
+  createdAt: timestamp("created_at").defaultNow(),
+  updatedAt: timestamp("updated_at").defaultNow(),
+  createdBy: varchar("created_by"),
+  updatedBy: varchar("updated_by"),
+  ipAddress: varchar("ip_address"),
+});
+
+// Report Templates table
+export const reportTemplates = pgTable("report_templates", {
+  id: uuid("id").primaryKey().default(sql`gen_random_uuid()`),
+  name: varchar("name").notNull(),
+  description: text("description"),
+  template: text("template").notNull(), // The actual template content with placeholders
+  fileName: varchar("file_name"), // Optional: for uploaded Word templates
+  filePath: varchar("file_path"), // Optional: for uploaded Word templates  
+  fileType: varchar("file_type").default("text/plain"),
+  fileSize: integer("file_size"),
+  category: varchar("category"), // e.g., "radiology", "general", "pediatric"
+  isActive: boolean("is_active").default(true),
+  createdAt: timestamp("created_at").defaultNow(),
+  updatedAt: timestamp("updated_at").defaultNow(),
+  createdBy: varchar("created_by").references(() => users.id),
+  updatedBy: varchar("updated_by"),
+  ipAddress: varchar("ip_address"),
+});
+
+// Patient Reports table
+export const patientReports = pgTable("patient_reports", {
+  id: uuid("id").primaryKey().default(sql`gen_random_uuid()`),
+  patientId: uuid("patient_id").references(() => patients.id).notNull(),
+  templateId: uuid("template_id").references(() => reportTemplates.id),
+  reportName: varchar("report_name").notNull(),
+  reportContent: text("report_content"), // Can store HTML or plain text content
+  fileName: varchar("file_name"),
+  filePath: varchar("file_path"),
+  fileType: varchar("file_type"),
+  fileSize: integer("file_size"),
+  status: varchar("status").default("draft"), // draft, completed, reviewed, finalized
+  doctorId: varchar("doctor_id").references(() => users.id).notNull(),
+  reviewedBy: varchar("reviewed_by").references(() => users.id),
+  reviewedAt: timestamp("reviewed_at"),
+  finalizedAt: timestamp("finalized_at"),
+  createdAt: timestamp("created_at").defaultNow(),
+  updatedAt: timestamp("updated_at").defaultNow(),
+  createdBy: varchar("created_by"),
+  updatedBy: varchar("updated_by"),
+  ipAddress: varchar("ip_address"),
+});
+
 // Insert schemas
 export const insertUserSchema = createInsertSchema(users).omit({
   id: true,
@@ -238,6 +293,24 @@ export const insertNotificationSchema = createInsertSchema(notifications).omit({
   createdAt: true,
 });
 
+export const insertPatientCommentSchema = createInsertSchema(patientComments).omit({
+  id: true,
+  createdAt: true,
+  updatedAt: true,
+});
+
+export const insertReportTemplateSchema = createInsertSchema(reportTemplates).omit({
+  id: true,
+  createdAt: true,
+  updatedAt: true,
+});
+
+export const insertPatientReportSchema = createInsertSchema(patientReports).omit({
+  id: true,
+  createdAt: true,
+  updatedAt: true,
+});
+
 // Types
 export type UpsertUser = typeof users.$inferInsert;
 export type User = typeof users.$inferSelect;
@@ -257,6 +330,15 @@ export type InsertUserPermission = z.infer<typeof insertUserPermissionSchema>;
 
 export type Notification = typeof notifications.$inferSelect;
 export type InsertNotification = z.infer<typeof insertNotificationSchema>;
+
+export type PatientComment = typeof patientComments.$inferSelect;
+export type InsertPatientComment = z.infer<typeof insertPatientCommentSchema>;
+
+export type ReportTemplate = typeof reportTemplates.$inferSelect;
+export type InsertReportTemplate = z.infer<typeof insertReportTemplateSchema>;
+
+export type PatientReport = typeof patientReports.$inferSelect;
+export type InsertPatientReport = z.infer<typeof insertPatientReportSchema>;
 
 export type PatientArchive = typeof patientArchive.$inferSelect;
 

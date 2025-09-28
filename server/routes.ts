@@ -3,6 +3,7 @@ import { createServer, type Server } from "http";
 import * as fs from "fs";
 import * as path from "path";
 import * as crypto from "crypto";
+import jwt from "jsonwebtoken";
 import { storage } from "./storage";
 import { setupAuth, isAuthenticated, hashPassword } from "./replitAuth";
 import { 
@@ -243,6 +244,48 @@ export async function registerRoutes(app: Express): Promise<Server> {
     } catch (error) {
       console.error("Error invalidating session:", error);
       res.status(500).json({ message: "Failed to invalidate session" });
+    }
+  });
+
+  // Session cleanup endpoint for browser close/tab hidden events
+  app.post('/api/auth/session-cleanup', async (req, res) => {
+    try {
+      const { action, timestamp } = req.body;
+      const authHeader = req.headers.authorization;
+      
+      if (authHeader && authHeader.startsWith('Bearer ')) {
+        const token = authHeader.substring(7);
+        try {
+          const decoded = jwt.verify(token, JWT_SECRET, { issuer: ISSUER }) as any;
+          const userId = decoded.claims?.sub;
+          const sessionId = decoded.claims?.sessionId;
+          
+          if (userId) {
+            console.log(`[Session Cleanup] ${action} cleanup for user ${userId}, session ${sessionId} at ${timestamp}`);
+            
+            // For browser close, immediately invalidate the specific session
+            if (action === 'browser_close' && sessionId) {
+              await storage.invalidateUserSession(sessionId);
+              console.log(`[Session Cleanup] Invalidated session ${sessionId} for user ${userId}`);
+            }
+            
+            // For tab hidden, mark session as inactive but don't invalidate immediately
+            if (action === 'tab_hidden' && sessionId) {
+              // Update last activity to mark as potentially stale
+              await storage.updateSessionActivity(sessionId);
+              console.log(`[Session Cleanup] Updated activity for session ${sessionId}`);
+            }
+          }
+        } catch (jwtError) {
+          console.warn('[Session Cleanup] Invalid token for cleanup:', jwtError);
+        }
+      }
+      
+      // Always respond OK to avoid client-side errors
+      res.json({ message: 'Cleanup processed', action, timestamp });
+    } catch (error) {
+      console.error('[Session Cleanup] Error:', error);
+      res.status(200).json({ message: 'Cleanup processed with errors' });
     }
   });
 
@@ -1046,16 +1089,37 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
       const patient = await storage.createPatient(finalPatientData);
 
-      // Send email notification to doctor
-      const user = await storage.getUser(createdBy!);
-      if (user?.email && user.emailNotifications) {
-        const viewLink = `${req.protocol}://${req.get('host')}/patients/${patient.id}`;
-        await emailService.sendPatientNotification(
-          user.email,
-          patient.name,
-          'added',
-          viewLink
-        );
+      // Send email notifications to all doctors with notifications enabled
+      try {
+        const doctorsWithNotifications = await storage.getDoctorsWithNotifications();
+        console.log(`Found ${doctorsWithNotifications.length} doctors with email notifications enabled`);
+        
+        if (doctorsWithNotifications.length > 0) {
+          const viewLink = `${req.protocol}://${req.get('host')}/patients/${patient.id}`;
+          
+          // Send notifications to all doctors concurrently
+          const emailPromises = doctorsWithNotifications.map(doctor => 
+            emailService.sendPatientNotification(
+              doctor.email!,
+              patient.name,
+              'added',
+              viewLink
+            ).catch(error => {
+              console.error(`Failed to send email to ${doctor.email}:`, error);
+              return false; // Return false to indicate failure
+            })
+          );
+          
+          const emailResults = await Promise.allSettled(emailPromises);
+          const successCount = emailResults.filter(result => 
+            result.status === 'fulfilled' && result.value === true
+          ).length;
+          
+          console.log(`Email notifications sent: ${successCount}/${doctorsWithNotifications.length} successful`);
+        }
+      } catch (emailError) {
+        console.error("Error sending email notifications for new patient:", emailError);
+        // Continue execution - don't fail patient creation due to email issues
       }
 
       // Create notification
@@ -1092,16 +1156,37 @@ export async function registerRoutes(app: Express): Promise<Server> {
         ipAddress,
       });
 
-      // Send email notification
-      const user = await storage.getUser(updatedBy!);
-      if (user?.email && user.emailNotifications) {
-        const viewLink = `${req.protocol}://${req.get('host')}/patients/${patient.id}`;
-        await emailService.sendPatientNotification(
-          user.email,
-          patient.name,
-          'updated',
-          viewLink
-        );
+      // Send email notifications to all doctors with notifications enabled
+      try {
+        const doctorsWithNotifications = await storage.getDoctorsWithNotifications();
+        console.log(`Found ${doctorsWithNotifications.length} doctors with email notifications enabled for patient update`);
+        
+        if (doctorsWithNotifications.length > 0) {
+          const viewLink = `${req.protocol}://${req.get('host')}/patients/${patient.id}`;
+          
+          // Send notifications to all doctors concurrently
+          const emailPromises = doctorsWithNotifications.map(doctor => 
+            emailService.sendPatientNotification(
+              doctor.email!,
+              patient.name,
+              'updated',
+              viewLink
+            ).catch(error => {
+              console.error(`Failed to send email to ${doctor.email}:`, error);
+              return false; // Return false to indicate failure
+            })
+          );
+          
+          const emailResults = await Promise.allSettled(emailPromises);
+          const successCount = emailResults.filter(result => 
+            result.status === 'fulfilled' && result.value === true
+          ).length;
+          
+          console.log(`Email notifications sent: ${successCount}/${doctorsWithNotifications.length} successful`);
+        }
+      } catch (emailError) {
+        console.error("Error sending email notifications for patient update:", emailError);
+        // Continue execution - don't fail patient update due to email issues
       }
 
       // Create notification
@@ -1417,24 +1502,31 @@ export async function registerRoutes(app: Express): Promise<Server> {
   app.post('/api/patients/:id/comments', isAuthenticated, PatientPermissions.edit, async (req: AuthenticatedRequest, res) => {
     try {
       const { id } = req.params;
-      const { content, type = 'general' } = req.body;
+      const { comment } = req.body;
+      const userId = req.user?.claims?.sub;
+      const ipAddress = req.ip;
       
-      if (!content || !content.trim()) {
+      console.log('[DEBUG] POST /api/patients/:id/comments');
+      console.log('[DEBUG] Request body:', JSON.stringify(req.body, null, 2));
+      console.log('[DEBUG] Comment field:', comment);
+      console.log('[DEBUG] Comment type:', typeof comment);
+      console.log('[DEBUG] Comment length:', comment?.length);
+      console.log('[DEBUG] Comment after trim:', comment?.trim());
+      console.log('[DEBUG] Comment after trim length:', comment?.trim()?.length);
+      
+      if (!comment || !comment.trim()) {
+        console.log('[DEBUG] Comment validation failed - sending 400 error');
         return res.status(400).json({ message: "Comment content is required" });
       }
 
-      const comment = await storage.addPatientComment(id, {
-        content: content.trim(),
-        type,
-        authorId: req.user.id,
-        authorName: req.user.name,
-        authorRole: req.user.role,
-        createdAt: new Date().toISOString(),
-        updatedAt: new Date().toISOString(),
-        isEdited: false
+      const newComment = await storage.addPatientComment(id, {
+        comment: comment.trim(),
+        doctorId: userId!,
+        createdBy: userId,
+        ipAddress,
       });
 
-      res.status(201).json(comment);
+      res.status(201).json(newComment);
     } catch (error) {
       console.error("Error adding patient comment:", error);
       res.status(500).json({ message: "Failed to add comment" });
@@ -1451,9 +1543,8 @@ export async function registerRoutes(app: Express): Promise<Server> {
       }
 
       const updatedComment = await storage.updatePatientComment(id, commentId, {
-        content: content.trim(),
-        updatedAt: new Date().toISOString(),
-        isEdited: true
+        comment: content.trim(),
+        updatedAt: new Date(),
       });
 
       if (!updatedComment) {
@@ -1578,6 +1669,589 @@ export async function registerRoutes(app: Express): Promise<Server> {
     } catch (error) {
       console.error("Error uploading patient files:", error);
       res.status(500).json({ message: "Failed to upload files" });
+    }
+  });
+
+  // ===== REPORT TEMPLATES ROUTES =====
+  
+  // Get all report templates
+  app.get('/api/report-templates', isAuthenticated, PatientPermissions.view, async (req: AuthenticatedRequest, res) => {
+    try {
+      const templates = await storage.getAllReportTemplates();
+      console.log(`Returning ${templates.length} report templates:`, templates.map(t => ({
+        id: t.id,
+        name: t.name,
+        template: t.template ? t.template.substring(0, 50) + '...' : 'no template',
+        category: t.category,
+        isActive: t.isActive
+      })));
+      res.json(templates);
+    } catch (error) {
+      console.error("Error fetching report templates:", error);
+      res.status(500).json({ message: "Failed to fetch report templates" });
+    }
+  });
+
+  // Get specific report template
+  app.get('/api/report-templates/:id', isAuthenticated, PatientPermissions.view, async (req: AuthenticatedRequest, res) => {
+    try {
+      const { id } = req.params;
+      const template = await storage.getReportTemplate(id);
+      
+      if (!template) {
+        return res.status(404).json({ message: "Report template not found" });
+      }
+      
+      res.json(template);
+    } catch (error) {
+      console.error("Error fetching report template:", error);
+      res.status(500).json({ message: "Failed to fetch report template" });
+    }
+  });
+
+  // Create new report template (admin only)
+  app.post('/api/report-templates', isAuthenticated, requireSuperAdmin, async (req: AuthenticatedRequest, res) => {
+    try {
+      const { name, description, template, category, isActive = true } = req.body;
+      
+      console.log('Creating report template with data:', {
+        name,
+        description,
+        template: template ? template.substring(0, 100) + '...' : 'no template',
+        category,
+        isActive,
+        userId: req.user?.claims?.sub || req.user?.id
+      });
+      
+      if (!name || !template) {
+        return res.status(400).json({ message: "Name and template content are required" });
+      }
+
+      const newTemplate = await storage.createReportTemplate({
+        name,
+        description,
+        template,
+        category,
+        isActive,
+        createdBy: req.user?.claims?.sub || req.user?.id,
+        updatedBy: req.user?.claims?.sub || req.user?.id,
+      });
+      
+      console.log('Successfully created report template:', {
+        id: newTemplate.id,
+        name: newTemplate.name,
+        category: newTemplate.category,
+        isActive: newTemplate.isActive
+      });
+
+      res.status(201).json(newTemplate);
+    } catch (error) {
+      console.error("Error creating report template:", error);
+      res.status(500).json({ message: "Failed to create report template" });
+    }
+  });
+
+  // Update report template (admin only)
+  app.put('/api/report-templates/:id', isAuthenticated, requireSuperAdmin, async (req: AuthenticatedRequest, res) => {
+    try {
+      const { id } = req.params;
+      const { name, description, template, category, isActive } = req.body;
+      
+      const updates = {
+        ...(name && { name }),
+        ...(description !== undefined && { description }),
+        ...(template && { template }),
+        ...(category && { category }),
+        ...(isActive !== undefined && { isActive }),
+        updatedBy: req.user?.claims?.sub || req.user?.id,
+      };
+
+      const updatedTemplate = await storage.updateReportTemplate(id, updates);
+      
+      if (!updatedTemplate) {
+        return res.status(404).json({ message: "Report template not found" });
+      }
+
+      res.json(updatedTemplate);
+    } catch (error) {
+      console.error("Error updating report template:", error);
+      res.status(500).json({ message: "Failed to update report template" });
+    }
+  });
+
+  // Delete report template (admin only - soft delete)
+  app.delete('/api/report-templates/:id', isAuthenticated, requireSuperAdmin, async (req: AuthenticatedRequest, res) => {
+    try {
+      const { id } = req.params;
+      const success = await storage.deleteReportTemplate(id);
+      
+      if (!success) {
+        return res.status(404).json({ message: "Report template not found" });
+      }
+
+      res.json({ message: "Report template deleted successfully" });
+    } catch (error) {
+      console.error("Error deleting report template:", error);
+      res.status(500).json({ message: "Failed to delete report template" });
+    }
+  });
+
+  // ===== PATIENT REPORTS ROUTES =====
+  
+  // Get all reports for a patient
+  app.get('/api/patients/:id/reports', isAuthenticated, PatientPermissions.view, async (req: AuthenticatedRequest, res) => {
+    try {
+      const { id } = req.params;
+      const reports = await storage.getPatientReports(id);
+      res.json(reports);
+    } catch (error) {
+      console.error("Error fetching patient reports:", error);
+      res.status(500).json({ message: "Failed to fetch patient reports" });
+    }
+  });
+
+  // Get specific patient report
+  app.get('/api/patients/:id/reports/:reportId', isAuthenticated, PatientPermissions.view, async (req: AuthenticatedRequest, res) => {
+    try {
+      const { id, reportId } = req.params;
+      const report = await storage.getPatientReport(id, reportId);
+      
+      if (!report) {
+        return res.status(404).json({ message: "Patient report not found" });
+      }
+      
+      res.json(report);
+    } catch (error) {
+      console.error("Error fetching patient report:", error);
+      res.status(500).json({ message: "Failed to fetch patient report" });
+    }
+  });
+
+  // Create new patient report
+  app.post('/api/patients/:id/reports', isAuthenticated, PatientPermissions.edit, async (req: AuthenticatedRequest, res) => {
+    try {
+      const { id } = req.params;
+      const { 
+        templateId, 
+        reportName, 
+        reportContent, 
+        fileName, 
+        filePath, 
+        fileType, 
+        fileSize, 
+        status = 'draft' 
+      } = req.body;
+      
+      if (!reportName || !reportContent) {
+        return res.status(400).json({ message: "Report name and content are required" });
+      }
+
+      const newReport = await storage.createPatientReport(id, {
+        templateId,
+        reportName,
+        reportContent,
+        fileName,
+        filePath,
+        fileType,
+        fileSize,
+        status,
+        doctorId: req.user.id,
+        createdBy: req.user.id,
+        updatedBy: req.user.id,
+        ipAddress: req.ip,
+      });
+
+      // Update patient report status
+      await storage.updatePatientReportStatus(id, status);
+
+      // Add to timeline
+      await storage.addTimelineEvent(id, {
+        type: 'report',
+        title: 'Report Created',
+        description: `Report "${reportName}" has been created`,
+        createdAt: new Date().toISOString(),
+        author: {
+          id: req.user.id,
+          name: req.user.name,
+          role: req.user.role
+        },
+        metadata: {
+          reportId: newReport.id,
+          reportName,
+          status
+        }
+      });
+
+      res.status(201).json(newReport);
+    } catch (error) {
+      console.error("Error creating patient report:", error);
+      res.status(500).json({ message: "Failed to create patient report" });
+    }
+  });
+
+  // Update patient report
+  app.put('/api/patients/:id/reports/:reportId', isAuthenticated, PatientPermissions.edit, async (req: AuthenticatedRequest, res) => {
+    try {
+      const { id, reportId } = req.params;
+      const { 
+        reportName, 
+        reportContent, 
+        fileName, 
+        filePath, 
+        fileType, 
+        fileSize, 
+        status,
+        reviewedBy,
+        reviewedAt,
+        finalizedAt 
+      } = req.body;
+      
+      const updates = {
+        ...(reportName && { reportName }),
+        ...(reportContent && { reportContent }),
+        ...(fileName && { fileName }),
+        ...(filePath && { filePath }),
+        ...(fileType && { fileType }),
+        ...(fileSize && { fileSize }),
+        ...(status && { status }),
+        ...(reviewedBy && { reviewedBy }),
+        ...(reviewedAt && { reviewedAt }),
+        ...(finalizedAt && { finalizedAt }),
+        updatedBy: req.user.id,
+        ipAddress: req.ip,
+      };
+
+      const updatedReport = await storage.updatePatientReport(id, reportId, updates);
+      
+      if (!updatedReport) {
+        return res.status(404).json({ message: "Patient report not found" });
+      }
+
+      // Update patient report status if changed
+      if (status) {
+        await storage.updatePatientReportStatus(id, status);
+      }
+
+      // Add to timeline if status changed
+      if (status) {
+        await storage.addTimelineEvent(id, {
+          type: 'report',
+          title: 'Report Updated',
+          description: `Report "${updatedReport.reportName}" status changed to ${status}`,
+          createdAt: new Date().toISOString(),
+          author: {
+            id: req.user.id,
+            name: req.user.name,
+            role: req.user.role
+          },
+          metadata: {
+            reportId: updatedReport.id,
+            reportName: updatedReport.reportName,
+            status
+          }
+        });
+      }
+
+      res.json(updatedReport);
+    } catch (error) {
+      console.error("Error updating patient report:", error);
+      res.status(500).json({ message: "Failed to update patient report" });
+    }
+  });
+
+  // Delete patient report
+  app.delete('/api/patients/:id/reports/:reportId', isAuthenticated, PatientPermissions.delete, async (req: AuthenticatedRequest, res) => {
+    try {
+      const { id, reportId } = req.params;
+      
+      // Get report details before deletion
+      const report = await storage.getPatientReport(id, reportId);
+      if (!report) {
+        return res.status(404).json({ message: "Patient report not found" });
+      }
+
+      const success = await storage.deletePatientReport(id, reportId);
+      
+      if (!success) {
+        return res.status(404).json({ message: "Patient report not found" });
+      }
+
+      // Add to timeline
+      await storage.addTimelineEvent(id, {
+        type: 'report',
+        title: 'Report Deleted',
+        description: `Report "${report.reportName}" has been deleted`,
+        createdAt: new Date().toISOString(),
+        author: {
+          id: req.user.id,
+          name: req.user.name,
+          role: req.user.role
+        },
+        metadata: {
+          reportId: report.id,
+          reportName: report.reportName
+        }
+      });
+
+      res.json({ message: "Patient report deleted successfully" });
+    } catch (error) {
+      console.error("Error deleting patient report:", error);
+      res.status(500).json({ message: "Failed to delete patient report" });
+    }
+  });
+
+  // ===== WORD DOCUMENT GENERATION ROUTES =====
+  
+  // Generate Word document report from template
+  app.post('/api/reports/generate', isAuthenticated, PatientPermissions.edit, async (req: AuthenticatedRequest, res) => {
+    try {
+      console.log('Report generation request body:', req.body);
+      
+      const { 
+        templateId, 
+        patientId, 
+        reportTitle, 
+        reportNotes, 
+        templateData 
+      } = req.body;
+      
+      console.log('Extracted values - templateId:', templateId, 'patientId:', patientId, 'reportTitle:', reportTitle);
+      
+      if (!templateId || !patientId || !reportTitle) {
+        console.log('Missing required fields validation failed');
+        return res.status(400).json({ message: "Template ID, Patient ID, and Report Title are required" });
+      }
+
+      // Get the template
+      const template = await storage.getReportTemplate(templateId);
+      if (!template) {
+        return res.status(404).json({ message: "Report template not found" });
+      }
+
+      // Get patient data for template processing
+      const patient = await storage.getPatient(patientId);
+      if (!patient) {
+        return res.status(404).json({ message: "Patient not found" });
+      }
+
+      // Process template with patient data
+      let processedTemplate = template.template;
+      
+      // Replace template variables with actual data
+      const templateVariables = {
+        patientName: patient.name,
+        patientAge: patient.age?.toString() || 'N/A',
+        patientGender: patient.gender,
+        patientPhone: patient.phone || 'N/A',
+        patientEmail: patient.email || 'N/A',
+        reportDate: new Date().toLocaleDateString(),
+        reportTime: new Date().toLocaleTimeString(),
+        specialty: patient.specialty,
+        reportTitle,
+        reportNotes: reportNotes || '',
+        ...templateData // Additional template data passed from frontend
+      };
+
+      // Replace template placeholders
+      Object.entries(templateVariables).forEach(([key, value]) => {
+        const placeholder = new RegExp(`{{${key}}}`, 'g');
+        processedTemplate = processedTemplate.replace(placeholder, String(value));
+      });
+
+      // Generate unique filename
+      const timestamp = new Date().toISOString().replace(/[:.]/g, '-');
+      const fileName = `${reportTitle.replace(/[^a-zA-Z0-9\s]/g, '').replace(/\s+/g, '_')}_${timestamp}.docx`;
+
+      // For now, create a simple Word document-like content
+      // In a full implementation, you would use a library like docx to generate actual .docx files
+      const wordContent = `
+<!DOCTYPE html>
+<html>
+<head>
+    <meta charset="UTF-8">
+    <title>${reportTitle}</title>
+    <style>
+        body { font-family: 'Times New Roman', serif; line-height: 1.6; margin: 2cm; }
+        .header { text-align: center; margin-bottom: 30px; }
+        .patient-info { margin-bottom: 20px; }
+        .content { margin-bottom: 20px; }
+        .signature { margin-top: 40px; }
+        h1 { color: #2c3e50; }
+        .info-table { width: 100%; border-collapse: collapse; margin-bottom: 20px; }
+        .info-table td { padding: 8px; border: 1px solid #ddd; }
+        .info-table td:first-child { font-weight: bold; background-color: #f8f9fa; }
+    </style>
+</head>
+<body>
+    <div class="header">
+        <h1>${reportTitle}</h1>
+        <p><strong>Generated on:</strong> ${new Date().toLocaleString()}</p>
+    </div>
+    
+    <div class="patient-info">
+        <h2>Patient Information</h2>
+        <table class="info-table">
+            <tr><td>Name:</td><td>${patient.name}</td></tr>
+            <tr><td>Age:</td><td>${patient.age || 'N/A'}</td></tr>
+            <tr><td>Gender:</td><td>${patient.gender}</td></tr>
+            <tr><td>Phone:</td><td>${patient.phone || 'N/A'}</td></tr>
+            <tr><td>Email:</td><td>${patient.email || 'N/A'}</td></tr>
+            <tr><td>Specialty:</td><td>${patient.specialty}</td></tr>
+        </table>
+    </div>
+    
+    <div class="content">
+        <h2>Report Content</h2>
+        <div style="white-space: pre-wrap; border: 1px solid #ddd; padding: 15px; background-color: #f9f9f9;">
+${processedTemplate}
+        </div>
+        
+        ${reportNotes ? `
+        <h3>Additional Notes</h3>
+        <div style="white-space: pre-wrap; border: 1px solid #ddd; padding: 15px;">
+${reportNotes}
+        </div>
+        ` : ''}
+    </div>
+    
+    <div class="signature">
+        <p><strong>Generated by:</strong> ${templateData?.doctorName || 'Doctor'}</p>
+        <p><strong>Date:</strong> ${new Date().toLocaleDateString()}</p>
+        <p><strong>Time:</strong> ${new Date().toLocaleTimeString()}</p>
+    </div>
+</body>
+</html>`;
+
+      // Store the generated report
+      const fileStorage = getFileStorageProvider();
+      const buffer = Buffer.from(wordContent, 'utf8');
+      const filePath = await fileStorage.uploadFile(buffer, fileName, { 
+        uploadId: crypto.randomUUID(),
+        contentType: 'text/html' // For now, storing as HTML until we implement proper .docx generation
+      });
+
+      // Create patient report record
+      const newReport = await storage.createPatientReport(patientId, {
+        templateId,
+        reportName: reportTitle,
+        reportContent: processedTemplate,
+        fileName,
+        filePath,
+        fileType: 'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+        fileSize: buffer.length,
+        status: 'draft',
+        doctorId: req.user?.claims?.sub || req.user?.id,
+        createdBy: req.user?.claims?.sub || req.user?.id,
+        updatedBy: req.user?.claims?.sub || req.user?.id,
+        ipAddress: req.ip,
+      });
+
+      // Update patient report status to 'Reporting'
+      await storage.updatePatient(patientId, {
+        reportStatus: 'Reporting',
+        reportedBy: req.user?.claims?.sub || req.user?.id,
+        updatedBy: req.user?.claims?.sub || req.user?.id,
+        ipAddress: req.ip,
+      });
+
+      // Add to patient timeline
+      try {
+        await storage.addTimelineEvent(patientId, {
+          type: 'report',
+          title: 'Report Generated',
+          description: `Report "${reportTitle}" has been generated from template "${template.name}"`,
+          createdAt: new Date().toISOString(),
+          author: {
+            id: req.user?.claims?.sub || req.user?.id,
+            name: templateData?.doctorName || 'Doctor',
+            role: 'doctor'
+          },
+          metadata: {
+            reportId: newReport.id,
+            reportName: reportTitle,
+            templateId,
+            templateName: template.name,
+            status: 'draft'
+          }
+        });
+      } catch (timelineError) {
+        console.warn('Failed to add timeline event:', timelineError);
+      }
+
+      // Create notification
+      try {
+        await storage.createNotification({
+          userId: req.user?.claims?.sub || req.user?.id,
+          type: 'report_generated',
+          title: 'Report Generated',
+          message: `Report "${reportTitle}" has been generated for patient ${patient.name}`,
+          relatedId: newReport.id,
+          createdBy: req.user?.claims?.sub || req.user?.id,
+          ipAddress: req.ip,
+        });
+      } catch (notificationError) {
+        console.warn('Failed to create notification:', notificationError);
+      }
+
+      // Return report data with file URL
+      const fileUrl = fileStorage.getFileUrl(filePath);
+      
+      res.status(201).json({
+        id: newReport.id,
+        reportName: reportTitle,
+        fileName,
+        filePath,
+        fileUrl,
+        fileSize: buffer.length,
+        status: 'draft',
+        createdAt: newReport.createdAt,
+        patient: {
+          id: patient.id,
+          name: patient.name
+        },
+        template: {
+          id: template.id,
+          name: template.name
+        }
+      });
+    } catch (error) {
+      console.error("Error generating Word document report:", error);
+      res.status(500).json({ message: "Failed to generate report" });
+    }
+  });
+
+  // Get Word document report file
+  app.get('/api/reports/:reportId/download', isAuthenticated, PatientPermissions.view, async (req: AuthenticatedRequest, res) => {
+    try {
+      const { reportId } = req.params;
+      
+      // Get report details
+      const report = await storage.getPatientReportById(reportId);
+      if (!report) {
+        return res.status(404).json({ message: "Report not found" });
+      }
+
+      // Serve the file
+      const privateObjectDir = process.env.PRIVATE_OBJECT_DIR || "storage/private";
+      const uploadDir = path.join(process.cwd(), privateObjectDir, "uploads");
+      const filePath = path.join(uploadDir, report.filePath);
+      
+      if (!fs.existsSync(filePath)) {
+        return res.status(404).json({ message: "Report file not found" });
+      }
+
+      // Set appropriate headers for Word document
+      res.setHeader('Content-Type', 'application/vnd.openxmlformats-officedocument.wordprocessingml.document');
+      res.setHeader('Content-Disposition', `attachment; filename="${report.fileName}"`);
+      res.setHeader('Access-Control-Allow-Origin', '*');
+      
+      // Stream the file
+      const fileStream = fs.createReadStream(filePath);
+      fileStream.pipe(res);
+      
+    } catch (error) {
+      console.error("Error downloading report:", error);
+      res.status(500).json({ message: "Failed to download report" });
     }
   });
 

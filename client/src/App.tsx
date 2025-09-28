@@ -1,3 +1,4 @@
+import React from "react";
 import { Switch, Route } from "wouter";
 import { queryClient } from "./lib/queryClient";
 import { QueryClientProvider } from "@tanstack/react-query";
@@ -16,6 +17,7 @@ import UserManagement from "@/pages/UserManagement";
 import UserDetails from "@/pages/UserDetails";
 import Analytics from "@/pages/Analytics";
 import Reports from "@/pages/Reports";
+import ReportTemplates from "@/pages/ReportTemplates";
 import Settings from "@/pages/Settings";
 import SEOSettings from "@/pages/SEOSettings";
 import Notifications from "@/pages/Notifications";
@@ -38,6 +40,66 @@ function AuthenticatedLayout() {
     userEmail,
   } = useSessionMonitoring();
   
+  // Session cleanup on browser close/refresh
+  React.useEffect(() => {
+    const handleBeforeUnload = async (e: BeforeUnloadEvent) => {
+      if (user) {
+        try {
+          const token = localStorage.getItem('jwtToken');
+          if (token) {
+            navigator.sendBeacon('/api/auth/session-cleanup', JSON.stringify({
+              action: 'browser_close',
+              timestamp: new Date().toISOString()
+            }));
+          }
+        } catch (error) {
+          console.warn('Failed to send session cleanup beacon:', error);
+        }
+      }
+    };
+
+    // Handle page visibility for long periods of inactivity
+    let visibilityTimer: NodeJS.Timeout | null = null;
+    const handleVisibilityChange = () => {
+      if (document.hidden && user) {
+        visibilityTimer = setTimeout(async () => {
+          try {
+            const token = localStorage.getItem('jwtToken');
+            if (token) {
+              await fetch('/api/auth/session-cleanup', {
+                method: 'POST',
+                headers: {
+                  'Content-Type': 'application/json',
+                  'Authorization': `Bearer ${token}`
+                },
+                body: JSON.stringify({
+                  action: 'tab_hidden',
+                  timestamp: new Date().toISOString()
+                })
+              });
+            }
+          } catch (error) {
+            console.warn('Failed to cleanup hidden tab session:', error);
+          }
+        }, 30 * 60 * 1000); // 30 minutes
+      } else if (!document.hidden && visibilityTimer) {
+        clearTimeout(visibilityTimer);
+        visibilityTimer = null;
+      }
+    };
+
+    window.addEventListener('beforeunload', handleBeforeUnload);
+    document.addEventListener('visibilitychange', handleVisibilityChange);
+    
+    return () => {
+      window.removeEventListener('beforeunload', handleBeforeUnload);
+      document.removeEventListener('visibilitychange', handleVisibilityChange);
+      if (visibilityTimer) {
+        clearTimeout(visibilityTimer);
+      }
+    };
+  }, [user]);
+  
   return (
     <div className="min-h-screen bg-background">
       <Sidebar />
@@ -59,6 +121,7 @@ function AuthenticatedLayout() {
           <Route path="/users/:id" component={UserDetails} />
           <Route path="/analytics" component={Analytics} />
           <Route path="/reports" component={Reports} />
+          <Route path="/report-templates" component={ReportTemplates} />
           <Route path="/settings" component={Settings} />
           <Route path="/seo-settings" component={SEOSettings} />
           <Route path="/notifications" component={Notifications} />

@@ -110,11 +110,51 @@ async function handleConcurrentSessions(userId: string): Promise<{ hasActiveSess
   // Clean up expired sessions first
   await storage.cleanupExpiredSessions();
   
+  // Also clean up stale sessions (older than 2 hours without activity)
+  await storage.cleanupStaleSessions(2 * 60 * 60 * 1000); // 2 hours in milliseconds
+  
   const activeSessions = await storage.getUserActiveSessions(userId);
   return {
     hasActiveSessions: activeSessions.length > 0,
     activeSessions
   };
+}
+
+/**
+ * Validate session and clean up if expired or invalid
+ */
+async function validateSession(sessionId: string, userId: string): Promise<boolean> {
+  try {
+    const session = await storage.getSessionById(sessionId);
+    
+    if (!session) {
+      console.log(`[Session Validation] Session ${sessionId} not found`);
+      return false;
+    }
+    
+    if (session.userId !== userId) {
+      console.log(`[Session Validation] Session ${sessionId} user mismatch`);
+      return false;
+    }
+    
+    if (session.expiresAt && new Date() > session.expiresAt) {
+      console.log(`[Session Validation] Session ${sessionId} expired`);
+      await storage.invalidateUserSession(sessionId);
+      return false;
+    }
+    
+    if (!session.isActive) {
+      console.log(`[Session Validation] Session ${sessionId} inactive`);
+      return false;
+    }
+    
+    // Session is valid, update last activity
+    await storage.updateSessionActivity(sessionId);
+    return true;
+  } catch (error) {
+    console.error(`[Session Validation] Error validating session ${sessionId}:`, error);
+    return false;
+  }
 }
 
 /**

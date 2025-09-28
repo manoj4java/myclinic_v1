@@ -7,6 +7,7 @@ export type SidebarMenu =
   | 'patients' 
   | 'analytics' 
   | 'reports' 
+  | 'report-templates'
   | 'user-management' 
   | 'settings' 
   | 'notifications'
@@ -50,6 +51,7 @@ export const ROLE_PERMISSIONS: RolePermissions = {
       'patients', 
       'analytics',
       'reports',
+      'report-templates',
       'user-management',
       'settings',
       'notifications',

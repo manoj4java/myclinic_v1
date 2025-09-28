@@ -60,6 +60,7 @@
     "cornerstone-web-image-loader": "^2.1.1",
     "date-fns": "^3.6.0",
     "dicom-parser": "^1.8.21",
+    "docx-preview": "^0.3.6",
     "dotenv": "^17.2.2",
     "drizzle-orm": "^0.39.3",
     "drizzle-zod": "^0.7.0",

@@ -2,6 +2,9 @@ import {
   users,
   patients,
   patientFiles,
+  patientComments,
+  reportTemplates,
+  patientReports,
   userPermissions,
   notifications,
   patientArchive,
@@ -14,6 +17,12 @@ import {
   type InsertPatient,
   type PatientFile,
   type InsertPatientFile,
+  type PatientComment,
+  type InsertPatientComment,
+  type ReportTemplate,
+  type InsertReportTemplate,
+  type PatientReport,
+  type InsertPatientReport,
   type UserPermission,
   type InsertUserPermission,
   type Notification,
@@ -37,6 +46,7 @@ export interface IStorage {
   updateUser(id: string, updates: Partial<User>): Promise<User>;
   updateLastLogin(userId: string): Promise<void>;
   getAllUsers(limit?: number, offset?: number, sortBy?: string, sortOrder?: string, search?: string, role?: string): Promise<{ users: User[], total: number }>;
+  getDoctorsWithNotifications(): Promise<User[]>;
   
   // Session management operations
   createUserSession(session: InsertUserSession): Promise<UserSession>;
@@ -87,9 +97,9 @@ export interface IStorage {
   getAllSEOConfigs(): Promise<SEOConfig[]>;
   
   // Patient Comments operations
-  getPatientComments(patientId: string): Promise<any[]>;
-  addPatientComment(patientId: string, comment: any): Promise<any>;
-  updatePatientComment(patientId: string, commentId: string, updates: any): Promise<any>;
+  getPatientComments(patientId: string): Promise<(PatientComment & { doctorName: string })[]>;
+  addPatientComment(patientId: string, comment: Omit<InsertPatientComment, 'patientId'>): Promise<PatientComment>;
+  updatePatientComment(patientId: string, commentId: string, updates: Partial<PatientComment>): Promise<PatientComment | null>;
   deletePatientComment(patientId: string, commentId: string): Promise<boolean>;
   
   // Patient Timeline operations
@@ -98,6 +108,26 @@ export interface IStorage {
   
   // Patient Studies operations
   getPatientStudies(patientId: string): Promise<any[]>;
+  
+  // Report Templates operations
+  getAllReportTemplates(): Promise<ReportTemplate[]>;
+  getReportTemplate(id: string): Promise<ReportTemplate | undefined>;
+  createReportTemplate(template: Omit<InsertReportTemplate, 'id'>): Promise<ReportTemplate>;
+  updateReportTemplate(id: string, updates: Partial<ReportTemplate>): Promise<ReportTemplate | null>;
+  deleteReportTemplate(id: string): Promise<boolean>;
+  
+  // Patient Reports operations
+  getPatientReports(patientId: string): Promise<(PatientReport & { templateName?: string; doctorName: string })[]>;
+  getPatientReport(patientId: string, reportId: string): Promise<PatientReport | undefined>;
+  getPatientReportById(reportId: string): Promise<PatientReport | undefined>;
+  createPatientReport(patientId: string, report: Omit<InsertPatientReport, 'patientId'>): Promise<PatientReport>;
+  updatePatientReport(patientId: string, reportId: string, updates: Partial<PatientReport>): Promise<PatientReport | null>;
+  deletePatientReport(patientId: string, reportId: string): Promise<boolean>;
+  updatePatientReportStatus(patientId: string, status: string): Promise<Patient | null>;
+  
+  // Session management operations
+  getSessionById(sessionId: string): Promise<UserSession | undefined>;
+  cleanupStaleSessions(): Promise<void>;
   
   // Enhanced file storage
   storePatientFile(patientId: string, fileData: any): Promise<string>;
@@ -226,6 +256,27 @@ export class DatabaseStorage implements IStorage {
     };
   }
 
+  async getDoctorsWithNotifications(): Promise<User[]> {
+    try {
+      const doctors = await db
+        .select()
+        .from(users)
+        .where(
+          and(
+            eq(users.role, 'doctor'), // Only doctors can be users
+            eq(users.emailNotifications, true),
+            eq(users.isActive, true)
+          )
+        );
+      
+      console.log(`Retrieved ${doctors.length} doctors with email notifications enabled`);
+      return doctors;
+    } catch (error) {
+      console.error("Error fetching doctors with notifications:", error);
+      return []; // Return empty array on error to prevent notification system failure
+    }
+  }
+
   // Session management operations
   async createUserSession(sessionData: InsertUserSession): Promise<UserSession> {
     console.log("Creating user session with data:", sessionData);
@@ -323,14 +374,61 @@ export class DatabaseStorage implements IStorage {
   }
 
   async cleanupExpiredSessions(): Promise<void> {
-    console.log('[Storage] Cleaning up expired sessions');
-    
-    // Delete expired sessions from database
-    const result = await db
-      .delete(userSessions)
-      .where(sql`${userSessions.expiresAt} <= NOW()`);
-    
-    console.log('[Storage] Cleaned up expired sessions');
+    try {
+      const result = await db
+        .update(userSessions)
+        .set({ 
+          isActive: false,
+          updatedAt: new Date()
+        })
+        .where(
+          or(
+            sql`${userSessions.expiresAt} <= NOW()`,
+            eq(userSessions.isActive, false)
+          )
+        );
+      
+      console.log(`Cleaned up expired sessions. Rows affected: ${result.rowCount || 0}`);
+    } catch (error) {
+      console.error('Error cleaning up expired sessions:', error);
+    }
+  }
+
+  async cleanupStaleSessions(maxInactiveMs: number): Promise<void> {
+    try {
+      const cutoffTime = new Date(Date.now() - maxInactiveMs);
+      
+      const result = await db
+        .update(userSessions)
+        .set({ 
+          isActive: false,
+          updatedAt: new Date()
+        })
+        .where(
+          and(
+            eq(userSessions.isActive, true),
+            sql`${userSessions.lastActivity} < ${cutoffTime}`
+          )
+        );
+      
+      console.log(`Cleaned up ${result.rowCount || 0} stale sessions (inactive > ${maxInactiveMs}ms)`);
+    } catch (error) {
+      console.error('Error cleaning up stale sessions:', error);
+    }
+  }
+
+  async updateSessionActivity(sessionId: string): Promise<void> {
+    try {
+      await db
+        .update(userSessions)
+        .set({ 
+          lastActivity: new Date(),
+          updatedAt: new Date()
+        })
+        .where(eq(userSessions.id, sessionId));
+    } catch (error) {
+      console.error('Error updating session activity:', error);
+    }
   }
 
   // Patient operations
@@ -678,50 +776,67 @@ export class DatabaseStorage implements IStorage {
   }
 
   // Patient Comments operations
-  async getPatientComments(patientId: string): Promise<any[]> {
+  async getPatientComments(patientId: string): Promise<(PatientComment & { doctorName: string })[]> {
     try {
-      // For now, return mock data - in a real implementation, this would use a database table
-      return [
-        {
-          id: '1',
-          content: 'Patient shows good recovery progress',
-          type: 'medical',
-          createdAt: new Date().toISOString(),
-          updatedAt: new Date().toISOString(),
-          author: {
-            id: 'doctor1',
-            name: 'Dr. Smith',
-            role: 'Doctor'
-          },
-          isEdited: false
-        }
-      ];
+      const commentsWithDoctors = await db
+        .select({
+          id: patientComments.id,
+          patientId: patientComments.patientId,
+          doctorId: patientComments.doctorId,
+          comment: patientComments.comment,
+          createdAt: patientComments.createdAt,
+          updatedAt: patientComments.updatedAt,
+          createdBy: patientComments.createdBy,
+          updatedBy: patientComments.updatedBy,
+          ipAddress: patientComments.ipAddress,
+          doctorName: sql<string>`COALESCE(${users.firstName} || ' ' || ${users.lastName}, ${users.username}, 'Unknown Doctor')`,
+        })
+        .from(patientComments)
+        .leftJoin(users, eq(patientComments.doctorId, users.id))
+        .where(eq(patientComments.patientId, patientId))
+        .orderBy(desc(patientComments.createdAt));
+      
+      return commentsWithDoctors;
     } catch (error) {
       console.error('Error fetching patient comments:', error);
       return [];
     }
   }
 
-  async addPatientComment(patientId: string, comment: any): Promise<any> {
+  async addPatientComment(patientId: string, comment: Omit<InsertPatientComment, 'patientId'>): Promise<PatientComment> {
     try {
-      // For now, return the comment with an ID - in a real implementation, this would insert into database
-      return {
-        id: Math.random().toString(36).substr(2, 9),
-        ...comment
-      };
+      const [newComment] = await db
+        .insert(patientComments)
+        .values({
+          ...comment,
+          patientId,
+          createdAt: new Date(),
+          updatedAt: new Date(),
+        })
+        .returning();
+      
+      return newComment;
     } catch (error) {
       console.error('Error adding patient comment:', error);
       throw error;
     }
   }
 
-  async updatePatientComment(patientId: string, commentId: string, updates: any): Promise<any> {
+  async updatePatientComment(patientId: string, commentId: string, updates: Partial<PatientComment>): Promise<PatientComment | null> {
     try {
-      // For now, return the updates - in a real implementation, this would update the database
-      return {
-        id: commentId,
-        ...updates
-      };
+      const [updatedComment] = await db
+        .update(patientComments)
+        .set({
+          ...updates,
+          updatedAt: new Date(),
+        })
+        .where(and(
+          eq(patientComments.id, commentId),
+          eq(patientComments.patientId, patientId)
+        ))
+        .returning();
+      
+      return updatedComment || null;
     } catch (error) {
       console.error('Error updating patient comment:', error);
       throw error;
@@ -730,8 +845,14 @@ export class DatabaseStorage implements IStorage {
 
   async deletePatientComment(patientId: string, commentId: string): Promise<boolean> {
     try {
-      // For now, return true - in a real implementation, this would delete from database
-      return true;
+      const result = await db
+        .delete(patientComments)
+        .where(and(
+          eq(patientComments.id, commentId),
+          eq(patientComments.patientId, patientId)
+        ));
+      
+      return result.rowCount ? result.rowCount > 0 : false;
     } catch (error) {
       console.error('Error deleting patient comment:', error);
       return false;
@@ -887,6 +1008,232 @@ export class DatabaseStorage implements IStorage {
       return objectId;
     } catch (error) {
       console.error('Error storing patient file:', error);
+      throw error;
+    }
+  }
+
+  // Report Templates operations
+  async getAllReportTemplates(): Promise<ReportTemplate[]> {
+    try {
+      console.log('DatabaseStorage: Fetching all report templates...');
+      const templates = await db
+        .select()
+        .from(reportTemplates)
+        .where(eq(reportTemplates.isActive, true))
+        .orderBy(desc(reportTemplates.createdAt));
+      console.log(`DatabaseStorage: Found ${templates.length} templates in database`);
+      return templates;
+    } catch (error) {
+      console.error('DatabaseStorage: Error fetching report templates:', error);
+      return [];
+    }
+  }
+
+  async getReportTemplate(id: string): Promise<ReportTemplate | undefined> {
+    try {
+      const [template] = await db
+        .select()
+        .from(reportTemplates)
+        .where(and(eq(reportTemplates.id, id), eq(reportTemplates.isActive, true)));
+      return template;
+    } catch (error) {
+      console.error('Error fetching report template:', error);
+      return undefined;
+    }
+  }
+
+  async createReportTemplate(template: Omit<InsertReportTemplate, 'id'>): Promise<ReportTemplate> {
+    try {
+      console.log('DatabaseStorage: About to insert template:', {
+        name: template.name,
+        description: template.description,
+        template: template.template ? template.template.substring(0, 50) + '...' : 'no template',
+        category: template.category,
+        isActive: template.isActive
+      });
+      
+      const templateData = {
+        ...template,
+        createdAt: new Date(),
+        updatedAt: new Date(),
+      };
+      
+      console.log('DatabaseStorage: Inserting template data:', templateData);
+      
+      const [newTemplate] = await db
+        .insert(reportTemplates)
+        .values(templateData)
+        .returning();
+        
+      console.log('DatabaseStorage: Successfully created template:', {
+        id: newTemplate.id,
+        name: newTemplate.name,
+        category: newTemplate.category
+      });
+      
+      return newTemplate;
+    } catch (error) {
+      console.error('DatabaseStorage: Error creating report template:', error);
+      throw error;
+    }
+  }
+
+  async updateReportTemplate(id: string, updates: Partial<ReportTemplate>): Promise<ReportTemplate | null> {
+    try {
+      const [updatedTemplate] = await db
+        .update(reportTemplates)
+        .set({
+          ...updates,
+          updatedAt: new Date(),
+        })
+        .where(eq(reportTemplates.id, id))
+        .returning();
+      return updatedTemplate || null;
+    } catch (error) {
+      console.error('Error updating report template:', error);
+      throw error;
+    }
+  }
+
+  async deleteReportTemplate(id: string): Promise<boolean> {
+    try {
+      // Soft delete by setting isActive to false
+      const result = await db
+        .update(reportTemplates)
+        .set({
+          isActive: false,
+          updatedAt: new Date(),
+        })
+        .where(eq(reportTemplates.id, id));
+      return result.rowCount ? result.rowCount > 0 : false;
+    } catch (error) {
+      console.error('Error deleting report template:', error);
+      return false;
+    }
+  }
+
+  // Patient Reports operations
+  async getPatientReports(patientId: string): Promise<(PatientReport & { templateName?: string; doctorName: string })[]> {
+    try {
+      const reportsWithDetails = await db
+        .select({
+          id: patientReports.id,
+          patientId: patientReports.patientId,
+          templateId: patientReports.templateId,
+          reportName: patientReports.reportName,
+          reportContent: patientReports.reportContent,
+          fileName: patientReports.fileName,
+          filePath: patientReports.filePath,
+          fileType: patientReports.fileType,
+          fileSize: patientReports.fileSize,
+          status: patientReports.status,
+          doctorId: patientReports.doctorId,
+          reviewedBy: patientReports.reviewedBy,
+          reviewedAt: patientReports.reviewedAt,
+          finalizedAt: patientReports.finalizedAt,
+          createdAt: patientReports.createdAt,
+          updatedAt: patientReports.updatedAt,
+          createdBy: patientReports.createdBy,
+          updatedBy: patientReports.updatedBy,
+          ipAddress: patientReports.ipAddress,
+          templateName: reportTemplates.name,
+          doctorName: sql<string>`COALESCE(${users.firstName} || ' ' || ${users.lastName}, ${users.username}, 'Unknown Doctor')`,
+        })
+        .from(patientReports)
+        .leftJoin(reportTemplates, eq(patientReports.templateId, reportTemplates.id))
+        .leftJoin(users, eq(patientReports.doctorId, users.id))
+        .where(eq(patientReports.patientId, patientId))
+        .orderBy(desc(patientReports.createdAt));
+      
+      return reportsWithDetails;
+    } catch (error) {
+      console.error('Error fetching patient reports:', error);
+      return [];
+    }
+  }
+
+  async getPatientReport(patientId: string, reportId: string): Promise<PatientReport | undefined> {
+    try {
+      const [report] = await db
+        .select()
+        .from(patientReports)
+        .where(and(
+          eq(patientReports.id, reportId),
+          eq(patientReports.patientId, patientId)
+        ));
+      return report;
+    } catch (error) {
+      console.error('Error fetching patient report:', error);
+      return undefined;
+    }
+  }
+
+  async createPatientReport(patientId: string, report: Omit<InsertPatientReport, 'patientId'>): Promise<PatientReport> {
+    try {
+      const [newReport] = await db
+        .insert(patientReports)
+        .values({
+          ...report,
+          patientId,
+          createdAt: new Date(),
+          updatedAt: new Date(),
+        })
+        .returning();
+      return newReport;
+    } catch (error) {
+      console.error('Error creating patient report:', error);
+      throw error;
+    }
+  }
+
+  async updatePatientReport(patientId: string, reportId: string, updates: Partial<PatientReport>): Promise<PatientReport | null> {
+    try {
+      const [updatedReport] = await db
+        .update(patientReports)
+        .set({
+          ...updates,
+          updatedAt: new Date(),
+        })
+        .where(and(
+          eq(patientReports.id, reportId),
+          eq(patientReports.patientId, patientId)
+        ))
+        .returning();
+      return updatedReport || null;
+    } catch (error) {
+      console.error('Error updating patient report:', error);
+      throw error;
+    }
+  }
+
+  async deletePatientReport(patientId: string, reportId: string): Promise<boolean> {
+    try {
+      const result = await db
+        .delete(patientReports)
+        .where(and(
+          eq(patientReports.id, reportId),
+          eq(patientReports.patientId, patientId)
+        ));
+      return result.rowCount ? result.rowCount > 0 : false;
+    } catch (error) {
+      console.error('Error deleting patient report:', error);
+      return false;
+    }
+  }
+
+  async updatePatientReportStatus(patientId: string, status: string): Promise<Patient | null> {
+    try {
+      const [updatedPatient] = await db
+        .update(patients)
+        .set({
+          reportStatus: status,
+          updatedAt: new Date(),
+        })
+        .where(eq(patients.id, patientId))
+        .returning();
+      return updatedPatient || null;
+    } catch (error) {
+      console.error('Error updating patient report status:', error);
       throw error;
     }
   }

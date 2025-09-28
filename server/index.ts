@@ -56,6 +56,17 @@ app.use((req, res, next) => {
   next();
 });
 
+// Periodic session cleanup
+setInterval(async () => {
+  try {
+    const { storage } = await import('./storage');
+    await storage.cleanupStaleSessions();
+    console.log('Stale sessions cleaned up');
+  } catch (error) {
+    console.error('Error cleaning up stale sessions:', error);
+  }
+}, 60 * 60 * 1000); // Run every hour
+
 (async () => {
   const server = await registerRoutes(app);
 

@@ -1,14 +1,38 @@
 import nodemailer from 'nodemailer';
+import dotenv from 'dotenv';
 
-if (!process.env.GMAIL_USER || !process.env.GMAIL_PASS) {
-  console.warn("Gmail credentials not set. Email notifications will be disabled.");
+dotenv.config();
+
+/**
+ * Email Service for My Clinic Portal
+ * 
+ * Features:
+ * - Patient notification emails to doctors when patients are added/updated
+ * - Automatic notifications to all doctors with emailNotifications=true
+ * - Temporary password emails for new users
+ * - Graceful handling when EMAIL_USER/EMAIL_PASS are not configured
+ * 
+ * Environment Variables Required:
+ * - EMAIL_USER: Gmail address for sending emails
+ * - EMAIL_PASS: Gmail app password (not regular password)
+ * 
+ * Usage:
+ * - Doctors receive notifications when:
+ *   1. New patients are added to the system
+ *   2. Existing patients are updated
+ * - Only active doctors with emailNotifications=true receive emails
+ * - Email failures don't block patient creation/updates
+ */
+
+if (!process.env.EMAIL_USER || !process.env.EMAIL_PASS) {
+  console.warn("Email credentials not set. Email notifications will be disabled.");
 }
 
 const transporter = nodemailer.createTransport({
   service: 'gmail',
   auth: {
-    user: process.env.GMAIL_USER,
-    pass: process.env.GMAIL_PASS,
+    user: process.env.EMAIL_USER,
+    pass: process.env.EMAIL_PASS,
   },
 });
 
@@ -31,15 +55,15 @@ export class EmailService {
   }
 
   async sendEmail(params: EmailParams): Promise<boolean> {
-    if (!process.env.GMAIL_USER || !process.env.GMAIL_PASS) {
-      console.warn("Gmail service not configured. Skipping email:", params.subject);
+    if (!process.env.EMAIL_USER || !process.env.EMAIL_PASS) {
+      console.warn("Email service not configured. Skipping email:", params.subject);
       return false;
     }
 
     try {
       await transporter.sendMail({
         to: params.to,
-        from: params.from || process.env.GMAIL_USER || 'noreply@clinic.com',
+  from: params.from || process.env.EMAIL_USER || 'noreply@clinic.com',
         subject: params.subject,
         text: params.text || '',
         html: params.html || '',
@@ -76,7 +100,7 @@ export class EmailService {
 
     return await this.sendEmail({
       to: doctorEmail,
-      from: process.env.GMAIL_USER || 'noreply@clinic.com',
+  from: process.env.EMAIL_USER || 'noreply@clinic.com',
       subject,
       html,
     });
@@ -110,7 +134,7 @@ export class EmailService {
 
     return await this.sendEmail({
       to: userEmail,
-      from: process.env.GMAIL_USER || 'noreply@clinic.com',
+  from: process.env.EMAIL_USER || 'noreply@clinic.com',
       subject,
       html,
     });
