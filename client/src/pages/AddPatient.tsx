@@ -50,7 +50,17 @@ function AddPatient() {
     },
   });
 
+  // Fetch active medical centers for the dropdown
+  const { data: centersResponse } = useQuery({
+    queryKey: ["/api/medical-centers/active"],
+    queryFn: async () => {
+      const response = await apiRequest("GET", "/api/medical-centers/active");
+      return await response.json();
+    },
+  });
+
   const doctors = doctorsResponse?.data?.filter((user: any) => user.role !== 'super_admin') || [];
+  const medicalCenters = centersResponse?.data || [];
 
   const form = useForm<z.infer<typeof formSchema>>({
     resolver: zodResolver(formSchema),
@@ -292,10 +302,10 @@ function AddPatient() {
       message="Creating patient..."
     >
       <div className="p-6 bg-gradient-to-br from-blue-50/50 to-white min-h-screen" data-testid="add-patient-view">
-        <div className="max-w-4xl mx-auto">
+        <div className="max-w-6xl">
           <div className="mb-2">
-            <div className="flex items-center justify-between">
-              <div className="flex items-center space-x-2">
+            <div className="flex items-start justify-between">
+              <div className="flex flex-col items-start space-y-1">
                 <div>
                   <h1 className="text-lg font-bold text-gray-900">Add New Patient</h1>
                 </div>
@@ -310,14 +320,14 @@ function AddPatient() {
           </div>
         
         <Form {...form}>
-          <form onSubmit={form.handleSubmit(onSubmit)} className="space-y-4">
+          <form onSubmit={form.handleSubmit(onSubmit)} className="space-y-4 text-left">
             {/* Personal Information */}
             <Card className="border-blue-100 shadow-sm">
               <CardHeader className="pb-2">
                 <CardTitle className="text-sm font-semibold">Personal Information</CardTitle>
               </CardHeader>
               <CardContent className="p-3">
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                <div className="grid grid-cols-1 md:grid-cols-4 gap-3 items-start">
                   <FormField
                     control={form.control}
                     name="name"
@@ -345,9 +355,10 @@ function AddPatient() {
                         <FormControl>
                           <Input 
                             type="number" 
-                            placeholder="Enter Age"
+                            placeholder="Age"
                             min={0}
                             max={120}
+                            className="w-20 text-center"
                             data-testid="input-patient-age"
                             {...field} 
                             onChange={(e) => field.onChange(e.target.value ? Number(e.target.value) : 0)}
@@ -374,6 +385,34 @@ function AddPatient() {
                             <SelectItem value="male">Male</SelectItem>
                             <SelectItem value="female">Female</SelectItem>
                             <SelectItem value="other">Other</SelectItem>
+                          </SelectContent>
+                        </Select>
+                        <FormMessage />
+                      </FormItem>
+                    )}
+                  />
+
+                  <FormField
+                    control={form.control}
+                    name="doctorId"
+                    render={({ field }) => (
+                      <FormItem>
+                        <FormLabel>Assigned Doctor</FormLabel>
+                        <Select onValueChange={field.onChange} value={field.value || ""}>
+                          <FormControl>
+                            <SelectTrigger data-testid="select-patient-doctor">
+                              <SelectValue placeholder="Select Doctor" />
+                            </SelectTrigger>
+                          </FormControl>
+                          <SelectContent>
+                            <SelectItem value="none">No Doctor Assigned</SelectItem>
+                            {doctors?.map((doctor: any) => (
+                              <SelectItem key={doctor.id} value={doctor.id}>
+                                {doctor.firstName && doctor.lastName 
+                                  ? `Dr. ${doctor.firstName} ${doctor.lastName}` 
+                                  : doctor.username || doctor.email}
+                              </SelectItem>
+                            ))}
                           </SelectContent>
                         </Select>
                         <FormMessage />
@@ -444,36 +483,49 @@ function AddPatient() {
                     )}
                   />
 
-                  <FormField
-                    control={form.control}
-                    name="doctorId"
-                    render={({ field }) => (
-                      <FormItem>
-                        <FormLabel>Assigned Doctor</FormLabel>
-                        <Select onValueChange={field.onChange} value={field.value || ""}>
+                  {/* Emergency Case and Is Printed in one line */}
+                  <div className="flex items-center space-x-6">
+                    <FormField
+                      control={form.control}
+                      name="emergency"
+                      render={({ field }) => (
+                        <FormItem className="flex items-center space-x-2">
                           <FormControl>
-                            <SelectTrigger data-testid="select-patient-doctor">
-                              <SelectValue placeholder="Select Doctor" />
-                            </SelectTrigger>
+                            <input
+                              type="checkbox"
+                              checked={field.value ?? false}
+                              onChange={(e) => field.onChange(e.target.checked)}
+                              className="w-4 h-4"
+                              data-testid="checkbox-emergency"
+                            />
                           </FormControl>
-                          <SelectContent>
-                            <SelectItem value="none">No Doctor Assigned</SelectItem>
-                            {doctors?.map((doctor: any) => (
-                              <SelectItem key={doctor.id} value={doctor.id}>
-                                {doctor.firstName && doctor.lastName 
-                                  ? `Dr. ${doctor.firstName} ${doctor.lastName}` 
-                                  : doctor.username || doctor.email}
-                              </SelectItem>
-                            ))}
-                          </SelectContent>
-                        </Select>
-                        <FormMessage />
-                      </FormItem>
-                    )}
-                  />
+                          <FormLabel className="text-sm font-normal">Emergency Case</FormLabel>
+                        </FormItem>
+                      )}
+                    />
+                    
+                    <FormField
+                      control={form.control}
+                      name="isPrinted"
+                      render={({ field }) => (
+                        <FormItem className="flex items-center space-x-2">
+                          <FormControl>
+                            <input
+                              type="checkbox"
+                              checked={field.value ?? false}
+                              onChange={(e) => field.onChange(e.target.checked)}
+                              className="w-4 h-4"
+                              data-testid="checkbox-is-printed"
+                            />
+                          </FormControl>
+                          <FormLabel className="text-sm font-normal">Is Printed</FormLabel>
+                        </FormItem>
+                      )}
+                    />
+                  </div>
                 </div>
                 
-                <div className="mt-6">
+                <div className="mt-4">
                   <FormField
                     control={form.control}
                     name="address"
@@ -483,6 +535,8 @@ function AddPatient() {
                         <FormControl>
                           <Textarea 
                             placeholder="Enter complete address"
+                            className="resize-none"
+                            rows={2}
                             data-testid="textarea-patient-address"
                             {...field}
                             value={field.value ?? ""} 
@@ -551,31 +605,7 @@ function AddPatient() {
                 <CardTitle>Study Details</CardTitle>
               </CardHeader>
               <CardContent>
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-                  <FormField
-                    control={form.control}
-                    name="emergency"
-                    render={({ field }) => (
-                      <FormItem className="flex flex-row items-center justify-between rounded-lg border p-4">
-                        <div className="space-y-0.5">
-                          <FormLabel className="text-base">Emergency Case</FormLabel>
-                          <div className="text-sm text-muted-foreground">
-                            Mark as emergency if urgent attention required
-                          </div>
-                        </div>
-                        <FormControl>
-                          <input
-                            type="checkbox"
-                            checked={field.value ?? false}
-                            onChange={(e) => field.onChange(e.target.checked)}
-                            className="w-4 h-4"
-                            data-testid="checkbox-emergency"
-                          />
-                        </FormControl>
-                      </FormItem>
-                    )}
-                  />
-
+                <div className="grid grid-cols-1 md:grid-cols-3 gap-4 items-start">
                   <FormField
                     control={form.control}
                     name="reportStatus"
@@ -606,7 +636,7 @@ function AddPatient() {
                       <FormItem>
                         <FormLabel>Study Date & Time</FormLabel>
                         <FormControl>
-                          <div className="space-y-2">
+                          <div className="flex space-x-2">
                             <Input 
                               value={currentDateTime.toLocaleDateString('en-US', {
                                 year: 'numeric',
@@ -614,7 +644,7 @@ function AddPatient() {
                                 day: '2-digit'
                               })}
                               readOnly
-                              className="bg-gray-50"
+                              className="bg-gray-50 flex-1"
                               placeholder="Study Date"
                             />
                             <Input 
@@ -627,13 +657,10 @@ function AddPatient() {
                                 minute: '2-digit' 
                               })} 
                               readOnly
-                              className="bg-gray-50"
+                              className="bg-gray-50 w-32"
                             />
                           </div>
                         </FormControl>
-                        <div className="text-xs text-muted-foreground">
-                          Auto-set to current date and time when patient is added (Updates live)
-                        </div>
                         <FormMessage />
                       </FormItem>
                     )}
@@ -692,14 +719,20 @@ function AddPatient() {
                     render={({ field }) => (
                       <FormItem>
                         <FormLabel>Medical Center</FormLabel>
-                        <FormControl>
-                          <Input 
-                            placeholder="Enter medical center/facility name"
-                            data-testid="input-center"
-                            {...field}
-                            value={field.value ?? ""} 
-                          />
-                        </FormControl>
+                        <Select onValueChange={field.onChange} value={field.value || ""}>
+                          <FormControl>
+                            <SelectTrigger data-testid="select-center">
+                              <SelectValue placeholder="Select medical center" />
+                            </SelectTrigger>
+                          </FormControl>
+                          <SelectContent>
+                            {medicalCenters.map((center: any) => (
+                              <SelectItem key={center.id} value={center.code}>
+                                {center.name}
+                              </SelectItem>
+                            ))}
+                          </SelectContent>
+                        </Select>
                         <FormMessage />
                       </FormItem>
                     )}
@@ -749,29 +782,7 @@ function AddPatient() {
                     )}
                   />
 
-                  <FormField
-                    control={form.control}
-                    name="isPrinted"
-                    render={({ field }) => (
-                      <FormItem className="flex flex-row items-center justify-between rounded-lg border p-4">
-                        <div className="space-y-0.5">
-                          <FormLabel className="text-base">Is Printed</FormLabel>
-                          <div className="text-sm text-muted-foreground">
-                            Mark if reports have been printed
-                          </div>
-                        </div>
-                        <FormControl>
-                          <input
-                            type="checkbox"
-                            checked={field.value ?? false}
-                            onChange={(e) => field.onChange(e.target.checked)}
-                            className="w-4 h-4"
-                            data-testid="checkbox-is-printed"
-                          />
-                        </FormControl>
-                      </FormItem>
-                    )}
-                  />
+
                 </div>
 
                 <div className="mt-6">

@@ -8,7 +8,7 @@ import { ObjectUploader } from "@/components/ObjectUploader";
 import { useToast } from "@/hooks/use-toast";
 import { queryClient, apiRequest } from "@/lib/queryClient";
 import type { UploadResult } from "@uppy/core";
-import { ArrowLeft, Calendar, Mail, Phone, MapPin, User, Stethoscope, FileText, Upload, Eye, Image as ImageIcon, MonitorPlay } from "lucide-react";
+import { ArrowLeft, Calendar, Mail, Phone, MapPin, User, Stethoscope, FileText, Upload, Eye, Image as ImageIcon, MonitorPlay, Clock, Hash, Building2, UserCheck, AlertCircle, Printer, Activity } from "lucide-react";
 import { DICOMViewer } from "@/components/DICOMViewer";
 
 export default function PatientDetails() {
@@ -229,124 +229,330 @@ export default function PatientDetails() {
   };
 
   return (
-    <div className="p-6 max-w-6xl mx-auto" data-testid="patient-details-view">
+    <div className="p-4 max-w-7xl" data-testid="patient-details-view">
       {/* Header */}
-      <div className="flex items-center justify-between mb-6">
-        <div className="flex items-center space-x-4">
+      <div className="flex items-start justify-between mb-4 bg-gradient-to-r from-blue-50/50 to-white p-4 rounded-lg border">
+        <div className="flex items-start space-x-3">
           <Button
             variant="ghost"
             size="sm"
             onClick={() => setLocation("/patients")}
             data-testid="button-back-patients"
+            className="mt-1"
           >
-            <ArrowLeft className="w-4 h-4 mr-2" />
-            Back to Patients
+            <ArrowLeft className="w-4 h-4 mr-1" />
+            Back
           </Button>
           <div>
-            <h1 className="text-3xl font-bold text-foreground" data-testid="text-patient-name">{(patient as any).name}</h1>
-            <p className="text-muted-foreground">Patient ID: {(patient as any).id.slice(-8)}</p>
+            <h1 className="text-2xl font-bold text-foreground" data-testid="text-patient-name">{(patient as any).name}</h1>
+            <div className="flex items-center space-x-3 mt-1 text-sm">
+              <span className="text-muted-foreground">ID: {(patient as any).id.slice(-8)}</span>
+              <span className="text-muted-foreground">•</span>
+              <span className="text-muted-foreground">{(patient as any).age || age}y</span>
+              <span className="text-muted-foreground">•</span>
+              <span className="text-muted-foreground capitalize">{(patient as any).gender}</span>
+              {(patient as any).phone && (
+                <>
+                  <span className="text-muted-foreground">•</span>
+                  <span className="text-muted-foreground">{(patient as any).phone}</span>
+                </>
+              )}
+            </div>
           </div>
         </div>
-        <Badge 
-          className={`${specialtyColors[(patient as any).specialty as keyof typeof specialtyColors] || 'bg-gray-100 text-gray-800'}`}
-          data-testid="badge-specialty"
-        >
-          {(patient as any).specialty.charAt(0).toUpperCase() + (patient as any).specialty.slice(1)}
-        </Badge>
+        <div className="flex items-center space-x-2">
+          {(patient as any).emergency && (
+            <Badge className="bg-red-100 text-red-800 dark:bg-red-900 dark:text-red-300 text-xs">
+              <AlertCircle className="w-3 h-3 mr-1" />
+              Emergency
+            </Badge>
+          )}
+          <Badge 
+            className={`text-xs ${specialtyColors[(patient as any).specialty as keyof typeof specialtyColors] || 'bg-gray-100 text-gray-800'}`}
+            data-testid="badge-specialty"
+          >
+            {(patient as any).specialty.charAt(0).toUpperCase() + (patient as any).specialty.slice(1)}
+          </Badge>
+        </div>
       </div>
 
-      <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+      <div className="grid grid-cols-1 lg:grid-cols-4 gap-4">
         {/* Main Content */}
-        <div className="lg:col-span-2 space-y-6">
+        <div className="lg:col-span-3 space-y-3">
+          
           {/* Personal Information */}
-          <Card>
-            <CardHeader>
-              <CardTitle className="flex items-center">
-                <User className="w-5 h-5 mr-2" />
+          <Card className="border-blue-100 shadow-sm">
+            <CardHeader className="pb-2">
+              <CardTitle className="flex items-center text-sm font-semibold">
+                <User className="w-4 h-4 mr-2" />
                 Personal Information
               </CardTitle>
             </CardHeader>
-            <CardContent>
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-                <div className="space-y-4">
-                  <div className="flex items-center space-x-3" data-testid="info-phone">
-                    <Phone className="w-4 h-4 text-muted-foreground" />
+            <CardContent className="p-3">
+              <div className="grid grid-cols-1 md:grid-cols-4 gap-3">
+                <div className="space-y-2">
+                  <div className="flex items-center space-x-2" data-testid="info-phone">
+                    <Phone className="w-3 h-3 text-muted-foreground" />
                     <div>
-                      <p className="text-sm text-muted-foreground">Phone</p>
-                      <p className="font-medium">{(patient as any).phone}</p>
+                      <p className="text-xs text-muted-foreground font-medium">Phone</p>
+                      <p className="font-medium text-sm">{(patient as any).phone}</p>
                     </div>
                   </div>
                   
-                  {(patient as any).email && (
-                    <div className="flex items-center space-x-3" data-testid="info-email">
-                      <Mail className="w-4 h-4 text-muted-foreground" />
-                      <div>
-                        <p className="text-sm text-muted-foreground">Email</p>
-                        <p className="font-medium">{(patient as any).email}</p>
-                      </div>
-                    </div>
-                  )}
-                  
-                  <div className="flex items-center space-x-3" data-testid="info-dob">
-                    <Calendar className="w-4 h-4 text-muted-foreground" />
+                  <div className="flex items-center space-x-2" data-testid="info-age">
+                    <Calendar className="w-3 h-3 text-muted-foreground" />
                     <div>
-                      <p className="text-sm text-muted-foreground">Date of Birth</p>
-                      <p className="font-medium">{formattedDate} (Age {age})</p>
+                      <p className="text-xs text-muted-foreground font-medium">Age</p>
+                      <p className="font-medium text-sm">{(patient as any).age || age} years</p>
                     </div>
                   </div>
                 </div>
                 
-                <div className="space-y-4">
-                  <div className="flex items-center space-x-3" data-testid="info-gender">
-                    <User className="w-4 h-4 text-muted-foreground" />
+                <div className="space-y-2">
+                  <div className="flex items-center space-x-2" data-testid="info-gender">
+                    <User className="w-3 h-3 text-muted-foreground" />
                     <div>
-                      <p className="text-sm text-muted-foreground">Gender</p>
-                      <p className="font-medium capitalize">{(patient as any).gender}</p>
+                      <p className="text-xs text-muted-foreground font-medium">Gender</p>
+                      <p className="font-medium text-sm capitalize">{(patient as any).gender}</p>
                     </div>
                   </div>
-                  
-                  <div className="flex items-center space-x-3" data-testid="info-specialty">
-                    <Stethoscope className="w-4 h-4 text-muted-foreground" />
-                    <div>
-                      <p className="text-sm text-muted-foreground">Specialty</p>
-                      <p className="font-medium capitalize">{(patient as any).specialty}</p>
-                    </div>
-                  </div>
-                  
-                  {(patient as any).address && (
-                    <div className="flex items-center space-x-3" data-testid="info-address">
-                      <MapPin className="w-4 h-4 text-muted-foreground" />
+
+                  {(patient as any).email && (
+                    <div className="flex items-center space-x-2" data-testid="info-email">
+                      <Mail className="w-3 h-3 text-muted-foreground" />
                       <div>
-                        <p className="text-sm text-muted-foreground">Address</p>
-                        <p className="font-medium">{(patient as any).address}</p>
+                        <p className="text-xs text-muted-foreground font-medium">Email</p>
+                        <p className="font-medium text-sm truncate">{(patient as any).email}</p>
+                      </div>
+                    </div>
+                  )}
+                </div>
+
+                <div className="space-y-2">
+                  <div className="flex items-center space-x-2" data-testid="info-specialty">
+                    <Stethoscope className="w-3 h-3 text-muted-foreground" />
+                    <div>
+                      <p className="text-xs text-muted-foreground font-medium">Specialty</p>
+                      <p className="font-medium text-sm capitalize">{(patient as any).specialty}</p>
+                    </div>
+                  </div>
+
+                  {(patient as any).center && (
+                    <div className="flex items-center space-x-2" data-testid="info-center">
+                      <Building2 className="w-3 h-3 text-muted-foreground" />
+                      <div>
+                        <p className="text-xs text-muted-foreground font-medium">Center</p>
+                        <p className="font-medium text-sm">{(patient as any).center}</p>
+                      </div>
+                    </div>
+                  )}
+                </div>
+
+                <div className="space-y-2">
+                  <div className="flex items-center flex-wrap gap-2">
+                    {(patient as any).emergency && (
+                      <Badge className="bg-red-100 text-red-800 text-xs px-2 py-0.5" data-testid="info-emergency">
+                        <AlertCircle className="w-3 h-3 mr-1" />
+                        Emergency
+                      </Badge>
+                    )}
+                    {(patient as any).isPrinted && (
+                      <Badge className="bg-green-100 text-green-800 text-xs px-2 py-0.5" data-testid="info-printed">
+                        <Printer className="w-3 h-3 mr-1" />
+                        Printed
+                      </Badge>
+                    )}
+                  </div>
+
+                  {(patient as any).reportStatus && (
+                    <div className="flex items-center space-x-2" data-testid="info-report-status">
+                      <Activity className="w-3 h-3 text-muted-foreground" />
+                      <div>
+                        <p className="text-xs text-muted-foreground font-medium">Status</p>
+                        <Badge className={`text-xs px-2 py-0.5 ${
+                          (patient as any).reportStatus === 'completed' ? 'bg-green-100 text-green-800' :
+                          (patient as any).reportStatus === 'pending' ? 'bg-yellow-100 text-yellow-800' :
+                          (patient as any).reportStatus === 'reviewed' ? 'bg-blue-100 text-blue-800' :
+                          'bg-gray-100 text-gray-800'
+                        }`}>
+                          {(patient as any).reportStatus}
+                        </Badge>
                       </div>
                     </div>
                   )}
                 </div>
               </div>
+              
+              {(patient as any).address && (
+                <div className="mt-3 pt-2 border-t" data-testid="info-address">
+                  <div className="flex items-start space-x-2">
+                    <MapPin className="w-3 h-3 text-muted-foreground mt-0.5" />
+                    <div>
+                      <p className="text-xs text-muted-foreground font-medium">Address</p>
+                      <p className="font-medium text-sm">{(patient as any).address}</p>
+                    </div>
+                  </div>
+                </div>
+              )}
+            </CardContent>
+          </Card>
+
+          {/* Study & Clinical Details */}
+          <Card>
+            <CardHeader className="pb-3">
+              <CardTitle className="flex items-center text-lg">
+                <FileText className="w-5 h-5 mr-2" />
+                Study & Clinical Details
+              </CardTitle>
+            </CardHeader>
+            <CardContent className="p-4">
+              <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                <div className="space-y-3">
+                  {(patient as any).studyDate && (
+                    <div className="flex items-center space-x-2" data-testid="info-study-date">
+                      <Calendar className="w-4 h-4 text-muted-foreground" />
+                      <div>
+                        <p className="text-xs text-muted-foreground">Study Date</p>
+                        <p className="font-medium text-sm">
+                          {new Date((patient as any).studyDate).toLocaleDateString()}
+                        </p>
+                      </div>
+                    </div>
+                  )}
+
+                  {(patient as any).studyTime && (
+                    <div className="flex items-center space-x-2" data-testid="info-study-time">
+                      <Clock className="w-4 h-4 text-muted-foreground" />
+                      <div>
+                        <p className="text-xs text-muted-foreground">Study Time</p>
+                        <p className="font-medium text-sm">{(patient as any).studyTime}</p>
+                      </div>
+                    </div>
+                  )}
+
+                  {(patient as any).accession && (
+                    <div className="flex items-center space-x-2" data-testid="info-accession">
+                      <Hash className="w-4 h-4 text-muted-foreground" />
+                      <div>
+                        <p className="text-xs text-muted-foreground">Accession #</p>
+                        <p className="font-medium text-sm">{(patient as any).accession}</p>
+                      </div>
+                    </div>
+                  )}
+                </div>
+
+                <div className="space-y-3">
+                  {(patient as any).modality && (
+                    <div className="flex items-center space-x-2" data-testid="info-modality">
+                      <Activity className="w-4 h-4 text-muted-foreground" />
+                      <div>
+                        <p className="text-xs text-muted-foreground">Modality</p>
+                        <p className="font-medium text-sm">{(patient as any).modality}</p>
+                      </div>
+                    </div>
+                  )}
+
+                  {(patient as any).refBy && (
+                    <div className="flex items-center space-x-2" data-testid="info-ref-by">
+                      <UserCheck className="w-4 h-4 text-muted-foreground" />
+                      <div>
+                        <p className="text-xs text-muted-foreground">Referred By</p>
+                        <p className="font-medium text-sm">{(patient as any).refBy}</p>
+                      </div>
+                    </div>
+                  )}
+
+                  {(patient as any).doctorId && (
+                    <div className="flex items-center space-x-2" data-testid="info-assigned-doctor">
+                      <Stethoscope className="w-4 h-4 text-muted-foreground" />
+                      <div>
+                        <p className="text-xs text-muted-foreground">Assigned Doctor</p>
+                        <p className="font-medium text-sm">Dr. {(patient as any).doctorId}</p>
+                      </div>
+                    </div>
+                  )}
+                </div>
+
+                <div className="space-y-3">
+                  {(patient as any).reportedBy && (
+                    <div className="flex items-center space-x-2" data-testid="info-reported-by">
+                      <UserCheck className="w-4 h-4 text-muted-foreground" />
+                      <div>
+                        <p className="text-xs text-muted-foreground">Reported By</p>
+                        <p className="font-medium text-sm">Dr. {(patient as any).reportedBy}</p>
+                      </div>
+                    </div>
+                  )}
+
+                  <div className="flex items-center space-x-2" data-testid="info-created">
+                    <Calendar className="w-4 h-4 text-muted-foreground" />
+                    <div>
+                      <p className="text-xs text-muted-foreground">Created</p>
+                      <p className="font-medium text-sm">
+                        {new Date((patient as any).createdAt).toLocaleDateString()}
+                      </p>
+                    </div>
+                  </div>
+
+                  {(patient as any).updatedAt && (patient as any).updatedAt !== (patient as any).createdAt && (
+                    <div className="flex items-center space-x-2" data-testid="info-updated">
+                      <Clock className="w-4 h-4 text-muted-foreground" />
+                      <div>
+                        <p className="text-xs text-muted-foreground">Last Updated</p>
+                        <p className="font-medium text-sm">
+                          {new Date((patient as any).updatedAt).toLocaleDateString()}
+                        </p>
+                      </div>
+                    </div>
+                  )}
+                </div>
+              </div>
+
+              {(patient as any).studyDesc && (
+                <div className="mt-4 pt-3 border-t" data-testid="info-study-desc">
+                  <h4 className="font-medium text-sm mb-2 flex items-center">
+                    <FileText className="w-4 h-4 mr-1" />
+                    Study Description
+                  </h4>
+                  <p className="text-muted-foreground bg-muted p-3 rounded-md text-sm">{(patient as any).studyDesc}</p>
+                </div>
+              )}
             </CardContent>
           </Card>
 
           {/* Medical Information */}
           <Card>
-            <CardHeader>
-              <CardTitle className="flex items-center">
-                <FileText className="w-5 h-5 mr-2" />
+            <CardHeader className="pb-3">
+              <CardTitle className="flex items-center text-lg">
+                <Stethoscope className="w-5 h-5 mr-2" />
                 Medical Information
               </CardTitle>
             </CardHeader>
-            <CardContent className="space-y-4">
+            <CardContent className="p-4 space-y-4">
               {(patient as any).chiefComplaint && (
                 <div data-testid="info-chief-complaint">
-                  <h4 className="font-medium text-foreground mb-2">Chief Complaint</h4>
-                  <p className="text-muted-foreground bg-muted p-3 rounded-md">{(patient as any).chiefComplaint}</p>
+                  <h4 className="font-medium text-sm mb-2 flex items-center">
+                    <FileText className="w-4 h-4 mr-1" />
+                    Chief Complaint
+                  </h4>
+                  <p className="text-muted-foreground bg-muted p-3 rounded-md text-sm">{(patient as any).chiefComplaint}</p>
                 </div>
               )}
               
               {(patient as any).medicalHistory && (
                 <div data-testid="info-medical-history">
-                  <h4 className="font-medium text-foreground mb-2">Medical History</h4>
-                  <p className="text-muted-foreground bg-muted p-3 rounded-md">{(patient as any).medicalHistory}</p>
+                  <h4 className="font-medium text-sm mb-2 flex items-center">
+                    <FileText className="w-4 h-4 mr-1" />
+                    Medical History
+                  </h4>
+                  <p className="text-muted-foreground bg-muted p-3 rounded-md text-sm">{(patient as any).medicalHistory}</p>
+                </div>
+              )}
+
+              {!(patient as any).chiefComplaint && !(patient as any).medicalHistory && (
+                <div className="text-center py-6 text-muted-foreground">
+                  <FileText className="w-8 h-8 mx-auto mb-2 opacity-50" />
+                  <p className="text-sm">No medical information recorded</p>
                 </div>
               )}
             </CardContent>

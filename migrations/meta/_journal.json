@@ -50,6 +50,13 @@
       "when": 1758900522376,
       "tag": "0006_bored_meteorite",
       "breakpoints": true
+    },
+    {
+      "idx": 7,
+      "version": "7",
+      "when": 1759142287306,
+      "tag": "0007_rapid_wither",
+      "breakpoints": true
     }
   ]
 }

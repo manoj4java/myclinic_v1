@@ -154,6 +154,22 @@ export const patientArchive = pgTable("patient_archive", {
   ipAddress: varchar("ip_address"),
 });
 
+// Medical Centers table
+export const medicalCenters = pgTable("medical_centers", {
+  id: uuid("id").primaryKey().default(sql`gen_random_uuid()`),
+  name: varchar("name").notNull(),
+  code: varchar("code").unique().notNull(), // Short code like "DEESA", "RMSACHORE"
+  address: text("address"),
+  phone: varchar("phone"),
+  email: varchar("email"),
+  isActive: boolean("is_active").default(true),
+  createdAt: timestamp("created_at").defaultNow(),
+  updatedAt: timestamp("updated_at").defaultNow(),
+  createdBy: varchar("created_by"),
+  updatedBy: varchar("updated_by"),
+  ipAddress: varchar("ip_address"),
+});
+
 // Relations
 export const usersRelations = relations(users, ({ many }) => ({
   patients: many(patients),
@@ -311,6 +327,12 @@ export const insertPatientReportSchema = createInsertSchema(patientReports).omit
   updatedAt: true,
 });
 
+export const insertMedicalCenterSchema = createInsertSchema(medicalCenters).omit({
+  id: true,
+  createdAt: true,
+  updatedAt: true,
+});
+
 // Types
 export type UpsertUser = typeof users.$inferInsert;
 export type User = typeof users.$inferSelect;
@@ -360,6 +382,9 @@ export const seoConfigs = pgTable('seo_configs', {
   createdAt: timestamp('created_at').defaultNow(),
   updatedAt: timestamp('updated_at').defaultNow(),
 });
+
+export type MedicalCenter = typeof medicalCenters.$inferSelect;
+export type InsertMedicalCenter = z.infer<typeof insertMedicalCenterSchema>;
 
 export type SEOConfig = typeof seoConfigs.$inferSelect;
 export type InsertSEOConfig = typeof seoConfigs.$inferInsert;

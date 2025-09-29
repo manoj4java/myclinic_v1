@@ -378,15 +378,7 @@ export default function ReportTemplates() {
         </Select>
       </div>
 
-      {/* Debug Info */}
-      <div className="mb-4 p-4 bg-muted rounded-lg">
-        <p><strong>Debug Info:</strong></p>
-        <p>Total templates: {templates?.length || 0}</p>
-        <p>Filtered templates: {filteredTemplates?.length || 0}</p>
-        <p>Selected category: {selectedCategory}</p>
-        <p>Is loading: {isLoading ? 'true' : 'false'}</p>
-        <p>Error: {error ? 'Yes' : 'No'}</p>
-      </div>
+      
 
       {/* Templates Grid */}
       <div className="grid gap-6 md:grid-cols-2 lg:grid-cols-3">

@@ -10,6 +10,7 @@ import {
   patientArchive,
   seoConfigs,
   userSessions,
+  medicalCenters,
   type User,
   type UpsertUser,
   type Patient,
@@ -30,6 +31,8 @@ import {
   type PatientArchive,
   type UserSession,
   type InsertUserSession,
+  type MedicalCenter,
+  type InsertMedicalCenter,
 } from "@shared/schema";
 import { db } from "./db";
 import { eq, desc, and, like, sql } from "drizzle-orm";
@@ -131,6 +134,13 @@ export interface IStorage {
   
   // Enhanced file storage
   storePatientFile(patientId: string, fileData: any): Promise<string>;
+  
+  // Medical Centers operations
+  getAllMedicalCenters(): Promise<MedicalCenter[]>;
+  getActiveMedicalCenters(): Promise<MedicalCenter[]>;
+  getMedicalCenter(id: string): Promise<MedicalCenter | undefined>;
+  createMedicalCenter(center: InsertMedicalCenter): Promise<MedicalCenter>;
+  updateMedicalCenter(id: string, updates: Partial<MedicalCenter>): Promise<MedicalCenter>;
 }
 
 export class DatabaseStorage implements IStorage {
@@ -1234,6 +1244,78 @@ export class DatabaseStorage implements IStorage {
       return updatedPatient || null;
     } catch (error) {
       console.error('Error updating patient report status:', error);
+      throw error;
+    }
+  }
+
+  // Medical Centers operations
+  async getAllMedicalCenters(): Promise<MedicalCenter[]> {
+    try {
+      const centers = await db.select().from(medicalCenters).orderBy(medicalCenters.name);
+      return centers;
+    } catch (error) {
+      console.error('Error fetching medical centers:', error);
+      throw error;
+    }
+  }
+
+  async getActiveMedicalCenters(): Promise<MedicalCenter[]> {
+    try {
+      const centers = await db
+        .select()
+        .from(medicalCenters)
+        .where(eq(medicalCenters.isActive, true))
+        .orderBy(medicalCenters.name);
+      return centers;
+    } catch (error) {
+      console.error('Error fetching active medical centers:', error);
+      throw error;
+    }
+  }
+
+  async getMedicalCenter(id: string): Promise<MedicalCenter | undefined> {
+    try {
+      const [center] = await db
+        .select()
+        .from(medicalCenters)
+        .where(eq(medicalCenters.id, id));
+      return center;
+    } catch (error) {
+      console.error('Error fetching medical center:', error);
+      throw error;
+    }
+  }
+
+  async createMedicalCenter(centerData: InsertMedicalCenter): Promise<MedicalCenter> {
+    try {
+      const [center] = await db
+        .insert(medicalCenters)
+        .values({
+          ...centerData,
+          createdAt: new Date(),
+          updatedAt: new Date(),
+        })
+        .returning();
+      return center;
+    } catch (error) {
+      console.error('Error creating medical center:', error);
+      throw error;
+    }
+  }
+
+  async updateMedicalCenter(id: string, updates: Partial<MedicalCenter>): Promise<MedicalCenter> {
+    try {
+      const [center] = await db
+        .update(medicalCenters)
+        .set({
+          ...updates,
+          updatedAt: new Date(),
+        })
+        .where(eq(medicalCenters.id, id))
+        .returning();
+      return center;
+    } catch (error) {
+      console.error('Error updating medical center:', error);
       throw error;
     }
   }

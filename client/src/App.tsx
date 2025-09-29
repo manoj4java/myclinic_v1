@@ -20,6 +20,7 @@ import Reports from "@/pages/Reports";
 import ReportTemplates from "@/pages/ReportTemplates";
 import Settings from "@/pages/Settings";
 import SEOSettings from "@/pages/SEOSettings";
+import MedicalCenters from "@/pages/MedicalCenters";
 import Notifications from "@/pages/Notifications";
 import ChangePassword from "@/pages/ChangePassword";
 import NotFound from "@/pages/not-found";
@@ -123,6 +124,7 @@ function AuthenticatedLayout() {
           <Route path="/reports" component={Reports} />
           <Route path="/report-templates" component={ReportTemplates} />
           <Route path="/settings" component={Settings} />
+          <Route path="/medical-centers" component={MedicalCenters} />
           <Route path="/seo-settings" component={SEOSettings} />
           <Route path="/notifications" component={Notifications} />
           <Route path="/change-password" component={() => <ChangePassword userId={user?.id} />} />

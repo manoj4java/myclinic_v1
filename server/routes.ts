@@ -878,6 +878,67 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
+  // Medical Centers Management Routes
+  app.get('/api/medical-centers', isAuthenticated, async (req: AuthenticatedRequest, res) => {
+    try {
+      const centers = await storage.getAllMedicalCenters();
+      res.json({ data: centers });
+    } catch (error) {
+      console.error("Error fetching medical centers:", error);
+      res.status(500).json({ message: "Failed to fetch medical centers" });
+    }
+  });
+
+  app.get('/api/medical-centers/active', async (req, res) => {
+    try {
+      const activeCenters = await storage.getActiveMedicalCenters();
+      res.json({ data: activeCenters });
+    } catch (error) {
+      console.error("Error fetching active medical centers:", error);
+      res.status(500).json({ message: "Failed to fetch active medical centers" });
+    }
+  });
+
+  app.post('/api/medical-centers', isAuthenticated, requireSuperAdmin, async (req: AuthenticatedRequest, res) => {
+    try {
+      const centerData = req.body;
+      const createdBy = req.user?.claims?.sub;
+      const ipAddress = req.ip;
+
+      const center = await storage.createMedicalCenter({
+        ...centerData,
+        createdBy,
+        updatedBy: createdBy,
+        ipAddress,
+      });
+
+      res.status(201).json(center);
+    } catch (error) {
+      console.error("Error creating medical center:", error);
+      res.status(500).json({ message: "Failed to create medical center" });
+    }
+  });
+
+  app.put('/api/medical-centers/:id', isAuthenticated, requireSuperAdmin, async (req: AuthenticatedRequest, res) => {
+    try {
+      const { id } = req.params;
+      const updates = req.body;
+      const updatedBy = req.user?.claims?.sub;
+      const ipAddress = req.ip;
+
+      const center = await storage.updateMedicalCenter(id, {
+        ...updates,
+        updatedBy,
+        ipAddress,
+      });
+
+      res.json(center);
+    } catch (error) {
+      console.error("Error updating medical center:", error);
+      res.status(500).json({ message: "Failed to update medical center" });
+    }
+  });
+
   // Patient Management Routes
   app.get('/api/patients', isAuthenticated, PatientPermissions.view, async (req: AuthenticatedRequest, res) => {
     try {

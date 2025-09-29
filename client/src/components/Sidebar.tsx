@@ -29,6 +29,7 @@ const navigationItems: NavigationItem[] = [
   { path: "/report-templates", label: "Report Templates", icon: "fa-file-text", key: "report-templates" },
   { path: "/analytics", label: "Analytics", icon: "fa-chart-bar", key: "analytics" },
   { path: "/users", label: "User Management", icon: "fa-user-cog", key: "user-management" },
+  { path: "/medical-centers", label: "Medical Centers", icon: "fa-hospital", key: "settings" },
   { path: "/settings", label: "Settings", icon: "fa-cog", key: "settings" },
   { path: "/seo-settings", label: "SEO Settings", icon: "fa-cog", key: "seo-settings" },
 ];
