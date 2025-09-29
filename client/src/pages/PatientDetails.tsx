@@ -398,21 +398,21 @@ export default function PatientDetails() {
           </Card>
 
           {/* Study & Clinical Details */}
-          <Card>
-            <CardHeader className="pb-3">
-              <CardTitle className="flex items-center text-lg">
-                <FileText className="w-5 h-5 mr-2" />
+          <Card className="border-green-100 shadow-sm">
+            <CardHeader className="pb-2">
+              <CardTitle className="flex items-center text-sm font-semibold">
+                <FileText className="w-4 h-4 mr-2" />
                 Study & Clinical Details
               </CardTitle>
             </CardHeader>
-            <CardContent className="p-4">
-              <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-                <div className="space-y-3">
+            <CardContent className="p-3">
+              <div className="grid grid-cols-1 md:grid-cols-4 gap-3">
+                <div className="space-y-2">
                   {(patient as any).studyDate && (
                     <div className="flex items-center space-x-2" data-testid="info-study-date">
-                      <Calendar className="w-4 h-4 text-muted-foreground" />
+                      <Calendar className="w-3 h-3 text-muted-foreground" />
                       <div>
-                        <p className="text-xs text-muted-foreground">Study Date</p>
+                        <p className="text-xs text-muted-foreground font-medium">Study Date</p>
                         <p className="font-medium text-sm">
                           {new Date((patient as any).studyDate).toLocaleDateString()}
                         </p>
@@ -422,41 +422,43 @@ export default function PatientDetails() {
 
                   {(patient as any).studyTime && (
                     <div className="flex items-center space-x-2" data-testid="info-study-time">
-                      <Clock className="w-4 h-4 text-muted-foreground" />
+                      <Clock className="w-3 h-3 text-muted-foreground" />
                       <div>
-                        <p className="text-xs text-muted-foreground">Study Time</p>
+                        <p className="text-xs text-muted-foreground font-medium">Time</p>
                         <p className="font-medium text-sm">{(patient as any).studyTime}</p>
-                      </div>
-                    </div>
-                  )}
-
-                  {(patient as any).accession && (
-                    <div className="flex items-center space-x-2" data-testid="info-accession">
-                      <Hash className="w-4 h-4 text-muted-foreground" />
-                      <div>
-                        <p className="text-xs text-muted-foreground">Accession #</p>
-                        <p className="font-medium text-sm">{(patient as any).accession}</p>
                       </div>
                     </div>
                   )}
                 </div>
 
-                <div className="space-y-3">
-                  {(patient as any).modality && (
-                    <div className="flex items-center space-x-2" data-testid="info-modality">
-                      <Activity className="w-4 h-4 text-muted-foreground" />
+                <div className="space-y-2">
+                  {(patient as any).accession && (
+                    <div className="flex items-center space-x-2" data-testid="info-accession">
+                      <Hash className="w-3 h-3 text-muted-foreground" />
                       <div>
-                        <p className="text-xs text-muted-foreground">Modality</p>
-                        <p className="font-medium text-sm">{(patient as any).modality}</p>
+                        <p className="text-xs text-muted-foreground font-medium">Accession #</p>
+                        <p className="font-medium text-sm">{(patient as any).accession}</p>
                       </div>
                     </div>
                   )}
 
+                  {(patient as any).modality && (
+                    <div className="flex items-center space-x-2" data-testid="info-modality">
+                      <Activity className="w-3 h-3 text-muted-foreground" />
+                      <div>
+                        <p className="text-xs text-muted-foreground font-medium">Modality</p>
+                        <p className="font-medium text-sm">{(patient as any).modality}</p>
+                      </div>
+                    </div>
+                  )}
+                </div>
+
+                <div className="space-y-2">
                   {(patient as any).refBy && (
                     <div className="flex items-center space-x-2" data-testid="info-ref-by">
-                      <UserCheck className="w-4 h-4 text-muted-foreground" />
+                      <UserCheck className="w-3 h-3 text-muted-foreground" />
                       <div>
-                        <p className="text-xs text-muted-foreground">Referred By</p>
+                        <p className="text-xs text-muted-foreground font-medium">Referred By</p>
                         <p className="font-medium text-sm">{(patient as any).refBy}</p>
                       </div>
                     </div>
@@ -464,95 +466,83 @@ export default function PatientDetails() {
 
                   {(patient as any).doctorId && (
                     <div className="flex items-center space-x-2" data-testid="info-assigned-doctor">
-                      <Stethoscope className="w-4 h-4 text-muted-foreground" />
+                      <Stethoscope className="w-3 h-3 text-muted-foreground" />
                       <div>
-                        <p className="text-xs text-muted-foreground">Assigned Doctor</p>
-                        <p className="font-medium text-sm">Dr. {(patient as any).doctorId}</p>
+                        <p className="text-xs text-muted-foreground font-medium">Assigned Dr</p>
+                        <p className="font-medium text-sm truncate">Dr. {(patient as any).doctorId}</p>
                       </div>
                     </div>
                   )}
                 </div>
 
-                <div className="space-y-3">
+                <div className="space-y-2">
                   {(patient as any).reportedBy && (
                     <div className="flex items-center space-x-2" data-testid="info-reported-by">
-                      <UserCheck className="w-4 h-4 text-muted-foreground" />
+                      <UserCheck className="w-3 h-3 text-muted-foreground" />
                       <div>
-                        <p className="text-xs text-muted-foreground">Reported By</p>
-                        <p className="font-medium text-sm">Dr. {(patient as any).reportedBy}</p>
+                        <p className="text-xs text-muted-foreground font-medium">Reported By</p>
+                        <p className="font-medium text-sm truncate">Dr. {(patient as any).reportedBy}</p>
                       </div>
                     </div>
                   )}
 
                   <div className="flex items-center space-x-2" data-testid="info-created">
-                    <Calendar className="w-4 h-4 text-muted-foreground" />
+                    <Calendar className="w-3 h-3 text-muted-foreground" />
                     <div>
-                      <p className="text-xs text-muted-foreground">Created</p>
+                      <p className="text-xs text-muted-foreground font-medium">Created</p>
                       <p className="font-medium text-sm">
                         {new Date((patient as any).createdAt).toLocaleDateString()}
                       </p>
                     </div>
                   </div>
-
-                  {(patient as any).updatedAt && (patient as any).updatedAt !== (patient as any).createdAt && (
-                    <div className="flex items-center space-x-2" data-testid="info-updated">
-                      <Clock className="w-4 h-4 text-muted-foreground" />
-                      <div>
-                        <p className="text-xs text-muted-foreground">Last Updated</p>
-                        <p className="font-medium text-sm">
-                          {new Date((patient as any).updatedAt).toLocaleDateString()}
-                        </p>
-                      </div>
-                    </div>
-                  )}
                 </div>
               </div>
 
               {(patient as any).studyDesc && (
-                <div className="mt-4 pt-3 border-t" data-testid="info-study-desc">
-                  <h4 className="font-medium text-sm mb-2 flex items-center">
-                    <FileText className="w-4 h-4 mr-1" />
+                <div className="mt-3 pt-2 border-t" data-testid="info-study-desc">
+                  <h4 className="font-medium text-xs mb-1 flex items-center text-muted-foreground">
+                    <FileText className="w-3 h-3 mr-1" />
                     Study Description
                   </h4>
-                  <p className="text-muted-foreground bg-muted p-3 rounded-md text-sm">{(patient as any).studyDesc}</p>
+                  <p className="text-muted-foreground bg-muted p-2 rounded text-sm">{(patient as any).studyDesc}</p>
                 </div>
               )}
             </CardContent>
           </Card>
 
           {/* Medical Information */}
-          <Card>
-            <CardHeader className="pb-3">
-              <CardTitle className="flex items-center text-lg">
-                <Stethoscope className="w-5 h-5 mr-2" />
+          <Card className="border-purple-100 shadow-sm">
+            <CardHeader className="pb-2">
+              <CardTitle className="flex items-center text-sm font-semibold">
+                <Stethoscope className="w-4 h-4 mr-2" />
                 Medical Information
               </CardTitle>
             </CardHeader>
-            <CardContent className="p-4 space-y-4">
+            <CardContent className="p-3 space-y-3">
               {(patient as any).chiefComplaint && (
                 <div data-testid="info-chief-complaint">
-                  <h4 className="font-medium text-sm mb-2 flex items-center">
-                    <FileText className="w-4 h-4 mr-1" />
+                  <h4 className="font-medium text-xs mb-1 flex items-center text-muted-foreground">
+                    <FileText className="w-3 h-3 mr-1" />
                     Chief Complaint
                   </h4>
-                  <p className="text-muted-foreground bg-muted p-3 rounded-md text-sm">{(patient as any).chiefComplaint}</p>
+                  <p className="text-muted-foreground bg-muted p-2 rounded text-sm">{(patient as any).chiefComplaint}</p>
                 </div>
               )}
               
               {(patient as any).medicalHistory && (
                 <div data-testid="info-medical-history">
-                  <h4 className="font-medium text-sm mb-2 flex items-center">
-                    <FileText className="w-4 h-4 mr-1" />
+                  <h4 className="font-medium text-xs mb-1 flex items-center text-muted-foreground">
+                    <FileText className="w-3 h-3 mr-1" />
                     Medical History
                   </h4>
-                  <p className="text-muted-foreground bg-muted p-3 rounded-md text-sm">{(patient as any).medicalHistory}</p>
+                  <p className="text-muted-foreground bg-muted p-2 rounded text-sm">{(patient as any).medicalHistory}</p>
                 </div>
               )}
 
               {!(patient as any).chiefComplaint && !(patient as any).medicalHistory && (
-                <div className="text-center py-6 text-muted-foreground">
-                  <FileText className="w-8 h-8 mx-auto mb-2 opacity-50" />
-                  <p className="text-sm">No medical information recorded</p>
+                <div className="text-center py-4 text-muted-foreground">
+                  <FileText className="w-6 h-6 mx-auto mb-1 opacity-50" />
+                  <p className="text-xs">No medical information recorded</p>
                 </div>
               )}
             </CardContent>
@@ -560,63 +550,60 @@ export default function PatientDetails() {
         </div>
 
         {/* Files & Upload Section */}
-        <div className="space-y-6">
+        <div className="space-y-3">
           {/* Existing Files */}
-          <Card>
-            <CardHeader>
-              <CardTitle className="flex items-center justify-between">
+          <Card className="border-orange-100 shadow-sm">
+            <CardHeader className="pb-2">
+              <CardTitle className="flex items-center justify-between text-sm font-semibold">
                 <span className="flex items-center space-x-2">
-                  <FileText className="w-5 h-5" />
-                  <span>Medical Files ({Array.isArray(patientFiles) ? patientFiles.length : 0})</span>
+                  <FileText className="w-4 h-4" />
+                  <span>Files ({Array.isArray(patientFiles) ? patientFiles.length : 0})</span>
                   {(patient as any)?.specialty === 'radiology' && (
-                    <Badge className="bg-blue-100 text-blue-800 dark:bg-blue-900 dark:text-blue-300">Radiology</Badge>
+                    <Badge className="bg-blue-100 text-blue-800 dark:bg-blue-900 dark:text-blue-300 text-xs">Radiology</Badge>
                   )}
                 </span>
-                {/* Removed DICOM Available badge */}
               </CardTitle>
             </CardHeader>
-            <CardContent>
+            <CardContent className="p-3">
               {isFilesLoading ? (
-                <div className="space-y-3">
+                <div className="space-y-2">
                   {[1, 2, 3].map((i) => (
                     <div key={i} className="animate-pulse">
-                      <div className="h-4 bg-muted rounded w-3/4 mb-2"></div>
-                      <div className="h-3 bg-muted rounded w-1/2"></div>
+                      <div className="h-3 bg-muted rounded w-3/4 mb-1"></div>
+                      <div className="h-2 bg-muted rounded w-1/2"></div>
                     </div>
                   ))}
                 </div>
               ) : Array.isArray(patientFiles) && patientFiles.length > 0 ? (
-                <div className="space-y-3" data-testid="patient-files-list">
+                <div className="space-y-2" data-testid="patient-files-list">
                   {patientFiles.map((file: any) => (
-                    <div key={file.id} className="flex items-center justify-between p-3 bg-muted rounded-md hover:bg-muted/80 transition-colors">
-                      <div className="flex items-center space-x-3">
-                        <div className="w-10 h-10 bg-white rounded-md flex items-center justify-center border">
+                    <div key={file.id} className="flex items-center justify-between p-2 bg-muted rounded hover:bg-muted/80 transition-colors">
+                      <div className="flex items-center space-x-2">
+                        <div className="w-6 h-6 bg-white rounded flex items-center justify-center border">
                           {getFileIcon(file.fileName)}
                         </div>
-                        <div className="flex-1">
-                          <p className="font-medium text-sm" data-testid={`file-name-${file.id}`}>{file.fileName}</p>
-                          <div className="flex items-center space-x-3 text-xs text-muted-foreground">
-                            <span>Uploaded {new Date(file.createdAt).toLocaleDateString()}</span>
+                        <div className="flex-1 min-w-0">
+                          <p className="font-medium text-xs truncate" data-testid={`file-name-${file.id}`}>{file.fileName}</p>
+                          <div className="flex items-center space-x-2 text-xs text-muted-foreground">
+                            <span>{new Date(file.createdAt).toLocaleDateString()}</span>
                             {isDICOMFile(file.fileName) ? (
-                              <Badge variant="secondary" className="bg-blue-100 text-blue-700 px-2 py-0.5">DICOM</Badge>
+                              <Badge variant="secondary" className="bg-blue-100 text-blue-700 px-1 py-0 text-xs">DICOM</Badge>
                             ) : isRadiologyImage(file.fileName) ? (
-                              <Badge variant="secondary" className="bg-green-100 text-green-700 px-2 py-0.5">Radiology</Badge>
+                              <Badge variant="secondary" className="bg-green-100 text-green-700 px-1 py-0 text-xs">Radiology</Badge>
                             ) : null}
                           </div>
                         </div>
                       </div>
-                      <div className="flex items-center space-x-2">
+                      <div className="flex items-center space-x-1">
                         {!isDICOMFile(file.fileName) && (
                           <Button
                             size="sm"
                             variant="outline"
                             onClick={() => openFileViewer(file)}
-                            className={`flex items-center space-x-1 ${isRadiologyImage(file.fileName) ? 'bg-green-600 hover:bg-green-700 text-white' : ''}`}
+                            className={`text-xs px-2 py-1 h-6 ${isRadiologyImage(file.fileName) ? 'bg-green-600 hover:bg-green-700 text-white' : ''}`}
                             data-testid={`button-view-file-${file.id}`}
                           >
-                            <span>
-                              {isRadiologyImage(file.fileName) ? 'Medical Viewer' : 'View'}
-                            </span>
+                            <Eye className="w-3 h-3" />
                           </Button>
                         )}
                       </div>
@@ -624,60 +611,60 @@ export default function PatientDetails() {
                   ))}
                 </div>
               ) : (
-                <div className="text-center py-8" data-testid="no-files-message">
-                  <FileText className="w-12 h-12 text-muted-foreground mx-auto mb-3" />
-                  <p className="text-muted-foreground">No files uploaded yet</p>
+                <div className="text-center py-4" data-testid="no-files-message">
+                  <FileText className="w-8 h-8 text-muted-foreground mx-auto mb-2" />
+                  <p className="text-xs text-muted-foreground">No files uploaded yet</p>
                 </div>
               )}
             </CardContent>
           </Card>
 
           {/* Upload New Files */}
-          <Card>
-            <CardHeader>
-              <CardTitle className="flex items-center">
-                <Upload className="w-5 h-5 mr-2" />
+          <Card className="border-gray-100 shadow-sm">
+            <CardHeader className="pb-2">
+              <CardTitle className="flex items-center text-sm font-semibold">
+                <Upload className="w-4 h-4 mr-2" />
                 Upload New Files
               </CardTitle>
             </CardHeader>
-            <CardContent>
-              <div className="space-y-4">
-                <div className="border-2 border-dashed border-border rounded-lg p-6 text-center hover:border-primary transition-colors">
+            <CardContent className="p-3">
+              <div className="space-y-3">
+                <div className="border border-dashed border-border rounded p-3 text-center hover:border-primary transition-colors">
                   <ObjectUploader
                     maxNumberOfFiles={10}
                     maxFileSize={104857600}
                     onGetUploadParameters={handleGetUploadParameters}
                     onComplete={handleUploadComplete}
-                    buttonClassName="bg-primary text-primary-foreground px-4 py-2 rounded-md hover:bg-primary/90"
+                    buttonClassName="bg-primary text-primary-foreground px-3 py-1 rounded text-xs hover:bg-primary/90"
                   >
-                    <Upload className="w-4 h-4 mr-2" />
+                    <Upload className="w-3 h-3 mr-1" />
                     Choose Files
                   </ObjectUploader>
-                  <p className="text-xs text-muted-foreground mt-2">
-                    Supported formats: JPEG, PNG, PDF, DICOM (Max 100MB per file)
+                  <p className="text-xs text-muted-foreground mt-1">
+                    JPEG, PNG, PDF, DICOM (Max 100MB)
                     {(patient as any)?.specialty === 'radiology' && (
-                      <span className="block text-blue-600 font-medium mt-1">
-                        📋 For radiology patients: Upload DICOM, X-ray, CT, MRI, or scan files for advanced viewing
+                      <span className="block text-blue-600 font-medium mt-1 text-xs">
+                        📋 Upload DICOM, X-ray, CT, MRI files
                       </span>
                     )}
                   </p>
                 </div>
 
                 {uploadedFiles.length > 0 && (
-                  <div className="space-y-3" data-testid="pending-uploads">
-                    <h4 className="text-sm font-medium">Files ready to upload:</h4>
+                  <div className="space-y-2" data-testid="pending-uploads">
+                    <h4 className="text-xs font-medium">Files ready to upload:</h4>
                     {uploadedFiles.map((fileURL, index) => (
                       <div key={index} className="flex items-center justify-between p-2 bg-yellow-50 dark:bg-yellow-900/20 rounded border">
                         <div className="flex items-center space-x-2">
-                          <FileText className="w-4 h-4 text-yellow-600" />
-                          <span className="text-sm">File {index + 1}</span>
+                          <FileText className="w-3 h-3 text-yellow-600" />
+                          <span className="text-xs">File {index + 1}</span>
                         </div>
-                        <Badge variant="secondary">Pending</Badge>
+                        <Badge variant="secondary" className="text-xs">Pending</Badge>
                       </div>
                     ))}
                     <Button
                       onClick={handleSaveFiles}
-                      className="w-full"
+                      className="w-full h-7 text-xs"
                       disabled={uploadFilesMutation.isPending}
                       data-testid="button-save-files"
                     >
