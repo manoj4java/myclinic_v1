@@ -20,7 +20,9 @@ import type { UploadResult } from "@uppy/core";
 import { z } from "zod";
 
 const formSchema = insertPatientSchema.extend({
-  age: z.coerce.number().min(0, "Age must be 0 or greater").max(120, "Age must be 120 or less"),
+  age: z.coerce.number()
+  .min(1, "Age must be 1 or greater")
+  .max(120, "Age must be 120 or less"),
 }).omit({
   dateOfBirth: true,
 });
@@ -69,7 +71,7 @@ function AddPatient() {
       email: "",
       phone: "",
       address: "",
-      age: 0,
+      age:1,
       gender: undefined,
       specialty: undefined,
       chiefComplaint: "",
@@ -356,7 +358,7 @@ function AddPatient() {
                           <Input 
                             type="number" 
                             placeholder="Age"
-                            min={0}
+                            min={1}
                             max={120}
                             className="w-20 text-center"
                             data-testid="input-patient-age"
@@ -484,22 +486,25 @@ function AddPatient() {
                   />
 
                   {/* Emergency Case and Is Printed in one line */}
-                  <div className="flex items-center space-x-6">
+                  <div className="flex items-start space-x-8">
                     <FormField
                       control={form.control}
                       name="emergency"
                       render={({ field }) => (
-                        <FormItem className="flex items-center space-x-2">
+                        <FormItem className="flex flex-col space-y-2">
+                          <FormLabel className="text-sm font-medium">Emergency Case</FormLabel>
                           <FormControl>
-                            <input
-                              type="checkbox"
-                              checked={field.value ?? false}
-                              onChange={(e) => field.onChange(e.target.checked)}
-                              className="w-4 h-4"
-                              data-testid="checkbox-emergency"
-                            />
+                            <div className="flex items-center space-x-2">
+                              <input
+                                type="checkbox"
+                                checked={field.value ?? false}
+                                onChange={(e) => field.onChange(e.target.checked)}
+                                className="w-4 h-4 accent-red-500"
+                                data-testid="checkbox-emergency"
+                              />
+                              <span className="text-sm text-gray-600">Mark as emergency</span>
+                            </div>
                           </FormControl>
-                          <FormLabel className="text-sm font-normal">Emergency Case</FormLabel>
                         </FormItem>
                       )}
                     />
@@ -508,17 +513,20 @@ function AddPatient() {
                       control={form.control}
                       name="isPrinted"
                       render={({ field }) => (
-                        <FormItem className="flex items-center space-x-2">
+                        <FormItem className="flex flex-col space-y-2">
+                          <FormLabel className="text-sm font-medium">Print Status</FormLabel>
                           <FormControl>
-                            <input
-                              type="checkbox"
-                              checked={field.value ?? false}
-                              onChange={(e) => field.onChange(e.target.checked)}
-                              className="w-4 h-4"
-                              data-testid="checkbox-is-printed"
-                            />
+                            <div className="flex items-center space-x-2">
+                              <input
+                                type="checkbox"
+                                checked={field.value ?? false}
+                                onChange={(e) => field.onChange(e.target.checked)}
+                                className="w-4 h-4 accent-blue-500"
+                                data-testid="checkbox-is-printed"
+                              />
+                              <span className="text-sm text-gray-600">Already printed</span>
+                            </div>
                           </FormControl>
-                          <FormLabel className="text-sm font-normal">Is Printed</FormLabel>
                         </FormItem>
                       )}
                     />
