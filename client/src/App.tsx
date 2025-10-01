@@ -17,7 +17,7 @@ import UserManagement from "@/pages/UserManagement";
 import UserDetails from "@/pages/UserDetails";
 import Analytics from "@/pages/Analytics";
 import Reports from "@/pages/Reports";
-import ReportTemplates from "@/pages/ReportTemplates";
+import TemplateManager from "@/pages/TemplateManager";
 import Settings from "@/pages/Settings";
 import SEOSettings from "@/pages/SEOSettings";
 import MedicalCenters from "@/pages/MedicalCenters";
@@ -122,7 +122,7 @@ function AuthenticatedLayout() {
           <Route path="/users/:id" component={UserDetails} />
           <Route path="/analytics" component={Analytics} />
           <Route path="/reports" component={Reports} />
-          <Route path="/report-templates" component={ReportTemplates} />
+          <Route path="/report-templates" component={TemplateManager} />
           <Route path="/settings" component={Settings} />
           <Route path="/medical-centers" component={MedicalCenters} />
           <Route path="/seo-settings" component={SEOSettings} />

@@ -501,6 +501,20 @@ export async function registerRoutes(app: Express): Promise<Server> {
         contentType = 'image/png';
       } else if (fileExtension === '.pdf') {
         contentType = 'application/pdf';
+      } else if (fileExtension === '.docx') {
+        contentType = 'application/vnd.openxmlformats-officedocument.wordprocessingml.document';
+      } else if (fileExtension === '.html' || fileExtension === '.htm') {
+        contentType = 'text/html';
+      }
+      
+      // Check if the file content is HTML (for generated reports stored as HTML)
+      try {
+        const fileContent = fs.readFileSync(filePath, 'utf8');
+        if (fileContent.includes('<html') || fileContent.includes('<!DOCTYPE')) {
+          contentType = 'text/html';
+        }
+      } catch (e) {
+        // If we can't read as text, keep the original content type
       }
       
       res.setHeader('Content-Type', contentType);
@@ -1840,6 +1854,34 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
+  // Update report template (PATCH for partial updates)
+  app.patch('/api/report-templates/:id', isAuthenticated, requireSuperAdmin, async (req: AuthenticatedRequest, res) => {
+    try {
+      const { id } = req.params;
+      const { name, description, template, category, isActive } = req.body;
+      
+      const updates = {
+        ...(name && { name }),
+        ...(description !== undefined && { description }),
+        ...(template && { template }),
+        ...(category && { category }),
+        ...(isActive !== undefined && { isActive }),
+        updatedBy: req.user?.claims?.sub || req.user?.id,
+      };
+
+      const updatedTemplate = await storage.updateReportTemplate(id, updates);
+      
+      if (!updatedTemplate) {
+        return res.status(404).json({ message: "Report template not found" });
+      }
+
+      res.json(updatedTemplate);
+    } catch (error) {
+      console.error("Error updating report template:", error);
+      res.status(500).json({ message: "Failed to update report template" });
+    }
+  });
+
   // Delete report template (admin only - soft delete)
   app.delete('/api/report-templates/:id', isAuthenticated, requireSuperAdmin, async (req: AuthenticatedRequest, res) => {
     try {
@@ -1863,7 +1905,9 @@ export async function registerRoutes(app: Express): Promise<Server> {
   app.get('/api/patients/:id/reports', isAuthenticated, PatientPermissions.view, async (req: AuthenticatedRequest, res) => {
     try {
       const { id } = req.params;
+      console.log('Fetching reports for patient ID:', id);
       const reports = await storage.getPatientReports(id);
+      console.log('Found reports:', reports.length, reports);
       res.json(reports);
     } catch (error) {
       console.error("Error fetching patient reports:", error);
@@ -2105,16 +2149,48 @@ export async function registerRoutes(app: Express): Promise<Server> {
         patientGender: patient.gender,
         patientPhone: patient.phone || 'N/A',
         patientEmail: patient.email || 'N/A',
+        patientAddress: patient.address || 'N/A',
         reportDate: new Date().toLocaleDateString(),
         reportTime: new Date().toLocaleTimeString(),
         specialty: patient.specialty,
+        modality: patient.modality || 'N/A',
+        accession: patient.accession || 'N/A',
+        center: patient.center || 'N/A',
+        refBy: patient.refBy || 'N/A',
         reportTitle,
         reportNotes: reportNotes || '',
         ...templateData // Additional template data passed from frontend
       };
 
+      // Replace template placeholders with enhanced data
+      const enhancedVariables = {
+        ...templateVariables,
+        // Enhanced patient info for medical documents
+        patientId: patient.id ? `${patient.id.substring(0, 8).toUpperCase()} MR` : 'N/A',
+        age: templateVariables.patientAge,
+        gender: patient.gender,
+        studyDate: patient.studyDate ? new Date(patient.studyDate).toLocaleDateString('en-GB', { 
+          day: '2-digit', month: 'short', year: 'numeric' 
+        }).replace(/\//g, ' - ') : new Date().toLocaleDateString('en-GB', { 
+          day: '2-digit', month: 'short', year: 'numeric' 
+        }).replace(/\//g, ' - '),
+        studyTime: patient.studyTime || new Date().toLocaleTimeString('en-US', { 
+          hour12: false, hour: '2-digit', minute: '2-digit' 
+        }),
+        currentDate: new Date().toLocaleDateString('en-GB', { 
+          day: '2-digit', month: 'short', year: 'numeric' 
+        }).replace(/\//g, ' - '),
+        currentTime: new Date().toLocaleTimeString('en-US', { 
+          hour12: false, hour: '2-digit', minute: '2-digit' 
+        }),
+        reportedBy: templateData?.reportedBy || patient.reportedBy || 'N/A',
+        chiefComplaint: patient.chiefComplaint || 'N/A',
+        medicalHistory: patient.medicalHistory || 'N/A',
+        studyDesc: patient.studyDesc || 'N/A',
+      };
+
       // Replace template placeholders
-      Object.entries(templateVariables).forEach(([key, value]) => {
+      Object.entries(enhancedVariables).forEach(([key, value]) => {
         const placeholder = new RegExp(`{{${key}}}`, 'g');
         processedTemplate = processedTemplate.replace(placeholder, String(value));
       });
@@ -2134,6 +2210,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
     <style>
         body { font-family: 'Times New Roman', serif; line-height: 1.6; margin: 2cm; }
         .header { text-align: center; margin-bottom: 30px; }
+        .patient-info-header { margin-bottom: 30px; border: 2px solid #000; }
         .patient-info { margin-bottom: 20px; }
         .content { margin-bottom: 20px; }
         .signature { margin-top: 40px; }
@@ -2141,31 +2218,43 @@ export async function registerRoutes(app: Express): Promise<Server> {
         .info-table { width: 100%; border-collapse: collapse; margin-bottom: 20px; }
         .info-table td { padding: 8px; border: 1px solid #ddd; }
         .info-table td:first-child { font-weight: bold; background-color: #f8f9fa; }
+        .patient-info-header { margin-bottom: 15px; }
+        .patient-header-table { width: 100%; border-collapse: collapse; font-size: 12pt; margin-bottom: 0; }
+        .patient-header-table td { padding: 4px 8px; border: 1px solid #000; vertical-align: top; }
+        .patient-header-table .label { font-weight: bold; background-color: #f0f0f0; width: 30%; }
+        .patient-header-table .value { background-color: white; }
     </style>
 </head>
 <body>
-    <div class="header">
-        <h1>${reportTitle}</h1>
-        <p><strong>Generated on:</strong> ${new Date().toLocaleString()}</p>
-    </div>
     
-    <div class="patient-info">
-        <h2>Patient Information</h2>
-        <table class="info-table">
-            <tr><td>Name:</td><td>${patient.name}</td></tr>
-            <tr><td>Age:</td><td>${patient.age || 'N/A'}</td></tr>
-            <tr><td>Gender:</td><td>${patient.gender}</td></tr>
-            <tr><td>Phone:</td><td>${patient.phone || 'N/A'}</td></tr>
-            <tr><td>Email:</td><td>${patient.email || 'N/A'}</td></tr>
-            <tr><td>Specialty:</td><td>${patient.specialty}</td></tr>
+    <!-- Structured Patient Information Header -->
+    <div class="patient-info-header">
+        <table class="patient-header-table">
+            <tr>
+                <td class="label">Patient ID</td>
+                <td class="value">${patient.id ? patient.id.substring(0, 8).toUpperCase() : 'N/A'} MR</td>
+                <td class="label">Age/Sex</td>
+                <td class="value">${String(patient.age || '0').padStart(3, '0')}${patient.gender ? patient.gender.charAt(0).toUpperCase() : 'U'}</td>
+            </tr>
+            <tr>
+                <td class="label">Patient Name</td>
+                <td class="value">${patient.name.toUpperCase()}${patient.age ? ` M/${patient.age}YRS` : ''}</td>
+                <td class="label">Date</td>
+                <td class="value">${new Date().toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' }).replace(/\//g, ' - ')}</td>
+            </tr>
+            <tr>
+                <td class="label">Referred By</td>
+                <td class="value">${templateData?.refBy || patient.refBy || 'N/A'}</td>
+                <td class="label">Reported Date</td>
+                <td class="value">${new Date().toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' }).replace(/\//g, ' - ')}</td>
+            </tr>
         </table>
     </div>
     
     <div class="content">
-        <h2>Report Content</h2>
-        <div style="white-space: pre-wrap; border: 1px solid #ddd; padding: 15px; background-color: #f9f9f9;">
+        <!-- Rich HTML content from template editor -->
 ${processedTemplate}
-        </div>
+    </div>
         
         ${reportNotes ? `
         <h3>Additional Notes</h3>
@@ -2173,12 +2262,6 @@ ${processedTemplate}
 ${reportNotes}
         </div>
         ` : ''}
-    </div>
-    
-    <div class="signature">
-        <p><strong>Generated by:</strong> ${templateData?.doctorName || 'Doctor'}</p>
-        <p><strong>Date:</strong> ${new Date().toLocaleDateString()}</p>
-        <p><strong>Time:</strong> ${new Date().toLocaleTimeString()}</p>
     </div>
 </body>
 </html>`;

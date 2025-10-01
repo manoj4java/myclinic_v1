@@ -188,17 +188,30 @@ export default function PatientManagement() {
       const response = await apiReq('POST', '/api/reports/generate', payload);
       return await response.json();
     },
-    onSuccess: (data, variables) => {
+    onSuccess: async (data, variables) => {
+      console.log('Report generation successful:', data);
+      
       // Refresh patient data to update reportStatus
       queryClient.invalidateQueries({ queryKey: ["/api/patients"] });
       if (variables.patient?.id) {
+        console.log('Invalidating reports query for patient:', variables.patient.id);
         queryClient.invalidateQueries({ queryKey: ["/api/patients", variables.patient.id, "reports"] });
+        
+        // Force refetch the reports
+        setTimeout(async () => {
+          await refetchReports();
+        }, 100);
       }
       toast({
-        title: "Report Generated",
-        description: "Word document report has been created successfully",
+        title: "Report Generated Successfully",
+        description: "The report has been created and is now available in View Reports",
       });
       setShowReportTemplateModal(false);
+      
+      // Auto-open the View Report dialog to show the newly created report
+      setTimeout(() => {
+        setShowViewReportDialog(true);
+      }, 1000); // Increased delay to allow for data refresh
     },
     onError: (error) => {
       console.error('Report generation error:', error);
@@ -272,6 +285,161 @@ export default function PatientManagement() {
     },
   });
 
+  // Helper function to download reports with proper format conversion
+  const downloadReport = async (report: any) => {
+    try {
+      console.log('Starting download for report:', report);
+      
+      const token = localStorage.getItem("jwtToken");
+      const downloadUrl = report.fileUrl || `/api/files/${report.filePath}`;
+      
+      console.log('Download URL:', downloadUrl);
+      
+      const response = await fetch(downloadUrl, {
+        credentials: 'include',
+        headers: {
+          ...(token ? { 'Authorization': `Bearer ${token}` } : {})
+        }
+      });
+      
+      console.log('Response status:', response.status, response.statusText);
+      
+      if (!response.ok) {
+        throw new Error(`Failed to download report: ${response.status} ${response.statusText}`);
+      }
+      
+      const contentType = response.headers.get('content-type');
+      let blob;
+      let fileName = report.fileName || report.reportName || 'report';
+      
+      // Ensure filename has proper extension
+      if (!fileName.match(/\.(docx?|html?)$/i)) {
+        fileName += '.docx';
+      }
+      
+      console.log('Content type:', contentType);
+      console.log('Original filename:', fileName);
+      
+      // If it's HTML content, convert it to a Word-compatible format
+      if (contentType && contentType.includes('text/html')) {
+        console.log('Processing HTML content');
+        
+        const htmlContent = await response.text();
+        
+        // Create a Word-compatible HTML document
+        const completeHtmlDoc = `<!DOCTYPE html>
+<html xmlns:o="urn:schemas-microsoft-com:office:office" xmlns:w="urn:schemas-microsoft-com:office:word" xmlns="http://www.w3.org/TR/REC-html40">
+<head>
+<meta charset="utf-8">
+<meta name="ProgId" content="Word.Document">
+<meta name="Generator" content="Medical Report System">
+<title>${fileName}</title>
+<style>
+@page {
+  size: 8.5in 11in;
+  margin: 1in 1.25in 1in 1.25in;
+}
+body {
+  font-family: 'Times New Roman', serif;
+  font-size: 12pt;
+  line-height: 1.15;
+  margin: 0;
+  background: white;
+}
+.header { text-align: center; margin-bottom: 30px; }
+.patient-info-header { margin-bottom: 30px; border: 2px solid #000; }
+.patient-info { margin-bottom: 20px; }
+.content { margin-bottom: 20px; }
+.signature { margin-top: 40px; }
+h1 { color: #2c3e50; font-size: 18pt; font-weight: bold; }
+h2 { font-size: 14pt; font-weight: bold; }
+.info-table {
+  width: 100%;
+  border-collapse: collapse;
+  margin-bottom: 20px;
+}
+.info-table td {
+  padding: 8px;
+  border: 1px solid #ddd;
+  vertical-align: top;
+}
+.info-table td:first-child {
+  font-weight: bold;
+  background-color: #f8f9fa;
+  width: 25%;
+}
+.patient-info-header { 
+  margin-bottom: 15px; 
+}
+.patient-header-table { 
+  width: 100%; 
+  border-collapse: collapse; 
+  font-size: 12pt; 
+  margin-bottom: 0;
+}
+.patient-header-table td { 
+  padding: 4px 8px; 
+  border: 1px solid #000; 
+  vertical-align: top; 
+}
+.patient-header-table .label { 
+  font-weight: bold; 
+  background-color: #f0f0f0; 
+  width: 30%; 
+}
+.patient-header-table .value { 
+  background-color: white; 
+}
+</style>
+</head>
+<body>
+${htmlContent.replace(/<html[^>]*>|<\/html>|<head[^>]*>[\s\S]*?<\/head>|<body[^>]*>|<\/body>|<!DOCTYPE[^>]*>/gi, '')}
+</body>
+</html>`;
+        
+        // Create blob with Word MIME type
+        blob = new Blob([completeHtmlDoc], { 
+          type: 'application/msword'
+        });
+        
+        // Use .doc extension for better compatibility
+        fileName = fileName.replace(/\.(docx?|html?)$/i, '') + '.doc';
+      } else {
+        // For non-HTML content, use the blob as-is
+        blob = await response.blob();
+      }
+      
+      console.log('Final filename:', fileName);
+      console.log('Blob size:', blob.size);
+      
+      // Download the file
+      const url = window.URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = fileName;
+      document.body.appendChild(a);
+      a.click();
+      window.URL.revokeObjectURL(url);
+      document.body.removeChild(a);
+      
+      console.log('Download completed successfully');
+      
+      toast({
+        title: "Success",
+        description: "Report downloaded successfully",
+      });
+      
+    } catch (error) {
+      console.error('Download error:', error);
+      const errorMessage = error instanceof Error ? error.message : 'Unknown error occurred';
+      toast({
+        title: "Download Error",
+        description: errorMessage,
+        variant: "destructive",
+      });
+    }
+  };
+
   const toggleEmergencyMutation = useMutation({
     mutationFn: async (patientId: string) => {
       const response = await apiReq("PATCH", `/api/patients/${patientId}/emergency`, {});
@@ -335,10 +503,27 @@ export default function PatientManagement() {
   }) : [];
 
   // Fetch patient reports for selected patient
-  const { data: patientReports = [] } = useQuery({
+  const { data: patientReports = [], refetch: refetchReports, isLoading: reportsLoading } = useQuery({
     queryKey: ["/api/patients", selectedPatient?.id, "reports"],
-    queryFn: () => apiReq("GET", `/api/patients/${selectedPatient.id}/reports`),
+    queryFn: async () => {
+      if (!selectedPatient?.id) return [];
+      
+      console.log('Fetching reports for patient:', selectedPatient.id);
+      try {
+        const response = await apiReq("GET", `/api/patients/${selectedPatient.id}/reports`);
+        const data = await response.json();
+        console.log('Patient reports response:', data);
+        
+        // Ensure we return an array
+        return Array.isArray(data) ? data : [];
+      } catch (error) {
+        console.error('Error fetching patient reports:', error);
+        return [];
+      }
+    },
     enabled: !!selectedPatient?.id,
+    staleTime: 0, // Always refetch
+    cacheTime: 0, // Don't cache
   });
 
   // Pagination handlers
@@ -655,24 +840,6 @@ export default function PatientManagement() {
                 <Button
                   variant="secondary"
                   size="sm"
-                  onClick={() => setShowReportTemplateModal(true)}
-                  className="bg-white/10 hover:bg-white/20 text-white border-white/20 h-7 px-2 text-xs"
-                  disabled={generateReportMutation.isPending}
-                >
-                  <FileUp className="w-3 h-3 mr-1" />
-                  New Report
-                </Button>
-              </TooltipTrigger>
-              <TooltipContent>
-                <p>Create a new report for this patient</p>
-              </TooltipContent>
-            </Tooltip>
-
-            <Tooltip>
-              <TooltipTrigger asChild>
-                <Button
-                  variant="secondary"
-                  size="sm"
                   onClick={() => handleFileUpload('report')}
                   className="bg-white/10 hover:bg-white/20 text-white border-white/20 h-7 px-2 text-xs"
                   disabled={attachReportMutation.isPending}
@@ -786,7 +953,7 @@ export default function PatientManagement() {
                     variant="secondary"
                     size="sm"
                     onClick={handleCreateReport}
-                    className="bg-blue-500/10 hover:bg-blue-500/20 text-blue-200 border-blue-400/20 h-7 px-2 text-xs"
+                    className="bg-white/10 hover:bg-white/20 text-white border-white/20 h-7 px-2 text-xs"
                   >
                     <FileText className="w-3 h-3 mr-1" />
                     Report
@@ -805,7 +972,7 @@ export default function PatientManagement() {
                       variant="secondary"
                       size="sm"
                       onClick={handleViewReport}
-                      className="bg-green-500/10 hover:bg-green-500/20 text-green-200 border-green-400/20 h-7 px-2 text-xs"
+                      className="bg-white/10 hover:bg-white/20 text-white border-white/20 h-7 px-2 text-xs"
                     >
                       <FileCheck className="w-3 h-3 mr-1" />
                       View Report
@@ -822,7 +989,7 @@ export default function PatientManagement() {
                       variant="secondary"
                       size="sm"
                       onClick={handleCreateReport}
-                      className="bg-blue-500/10 hover:bg-blue-500/20 text-blue-200 border-blue-400/20 h-7 px-2 text-xs"
+                      className="bg-white/10 hover:bg-white/20 text-white border-white/20 h-7 px-2 text-xs"
                     >
                       <FileText className="w-3 h-3 mr-1" />
                       Report
@@ -842,7 +1009,7 @@ export default function PatientManagement() {
                     variant="secondary"
                     size="sm"
                     onClick={() => handleDeletePatient(selectedPatient.id, selectedPatient.name)}
-                    className="bg-red-500/10 hover:bg-red-500/20 text-red-200 border-red-400/20 h-7 px-2 text-xs"
+                    className="bg-white/10 hover:bg-white/20 text-white border-white/20 h-7 px-2 text-xs"
                   >
                     <Trash2 className="w-3 h-3 mr-1" />
                     Deactivate
@@ -1399,40 +1566,76 @@ export default function PatientManagement() {
       {/* View Report Dialog */}
       {selectedPatient && (
         <Dialog open={showViewReportDialog} onOpenChange={setShowViewReportDialog}>
-          <DialogContent className="sm:max-w-[800px]">
+          <DialogContent className="sm:max-w-[900px] max-h-[90vh] overflow-hidden">
             <DialogHeader>
-              <DialogTitle>Patient Reports - {selectedPatient.name}</DialogTitle>
-              <DialogDescription>
-                View existing reports for this patient (Report Status: {selectedPatient.reportStatus || 'N/A'})
-              </DialogDescription>
+              <div className="flex items-center justify-between">
+                <div>
+                  <DialogTitle className="flex items-center">
+                    <FileText className="w-5 h-5 mr-2" />
+                    Patient Reports - {selectedPatient.name}
+                  </DialogTitle>
+                  <DialogDescription>
+                    View existing reports for this patient (Report Status: {selectedPatient.reportStatus || 'N/A'})
+                  </DialogDescription>
+                </div>
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={async () => {
+                    console.log('Refreshing reports for patient:', selectedPatient.id);
+                    await refetchReports();
+                    queryClient.invalidateQueries({ queryKey: ["/api/patients", selectedPatient.id, "reports"] });
+                  }}
+                >
+                  <RefreshCw className="w-4 h-4 mr-2" />
+                  Refresh
+                </Button>
+              </div>
             </DialogHeader>
-            <div className="space-y-4">
-              {patientReports && patientReports.length > 0 ? (
+            <div className="space-y-4 max-h-[60vh] overflow-y-auto">
+              {(() => {
+                console.log('Current patientReports:', patientReports);
+                console.log('patientReports length:', patientReports?.length);
+                console.log('reportsLoading:', reportsLoading);
+                return null;
+              })()}
+              {reportsLoading ? (
+                <div className="text-center py-8">
+                  <RefreshCw className="h-8 w-8 text-blue-500 mx-auto mb-4 animate-spin" />
+                  <p className="text-muted-foreground">Loading reports...</p>
+                </div>
+              ) : patientReports && patientReports.length > 0 ? (
                 <div className="grid gap-4">
                   {patientReports.map((report: any) => (
-                    <Card key={report.id}>
+                    <Card key={report.id} className="border-l-4 border-l-blue-500">
                       <CardContent className="p-4">
                         <div className="flex items-start justify-between">
-                          <div>
-                            <h4 className="font-medium">{report.reportName || report.fileName}</h4>
-                            <p className="text-sm text-muted-foreground">
-                              Created: {new Date(report.createdAt).toLocaleDateString()}
-                            </p>
-                            <p className="text-sm text-muted-foreground">
-                              Doctor: {report.doctorName || 'Unknown'}
-                            </p>
-                            {report.templateName && (
-                              <p className="text-sm text-muted-foreground">
-                                Template: {report.templateName}
-                              </p>
-                            )}
-                            <Badge variant={report.status === 'finalized' ? 'default' : 'secondary'}>
-                              {report.status || 'draft'}
-                            </Badge>
+                          <div className="flex-1">
+                            <h4 className="font-medium text-lg mb-2">{report.reportName || report.fileName}</h4>
+                            <div className="grid grid-cols-2 gap-4 text-sm text-muted-foreground mb-3">
+                              <div>
+                                <p><strong>Created:</strong> {new Date(report.createdAt).toLocaleDateString()} at {new Date(report.createdAt).toLocaleTimeString()}</p>
+                                <p><strong>Doctor:</strong> {report.doctorName || 'Unknown'}</p>
+                              </div>
+                              <div>
+                                {report.templateName && (
+                                  <p><strong>Template:</strong> {report.templateName}</p>
+                                )}
+                                <p><strong>File Size:</strong> {report.fileSize ? `${Math.round(report.fileSize / 1024)} KB` : 'Unknown'}</p>
+                              </div>
+                            </div>
+                            <div className="flex items-center space-x-2">
+                              <Badge variant={report.status === 'finalized' ? 'default' : report.status === 'draft' ? 'secondary' : 'outline'}>
+                                {report.status || 'draft'}
+                              </Badge>
+                              <Badge variant="outline" className="text-xs">
+                                {report.fileType === 'text/html' ? 'HTML Report' : 'Word Document'}
+                              </Badge>
+                            </div>
                           </div>
-                          <div className="flex space-x-2">
+                          <div className="flex flex-col space-y-2 ml-4">
                             <Button 
-                              variant="outline" 
+                              variant="default" 
                               size="sm"
                               onClick={() => {
                                 setSelectedReportFile({
@@ -1442,18 +1645,16 @@ export default function PatientManagement() {
                                 setShowWordDocumentViewer(true);
                                 setShowViewReportDialog(false);
                               }}
+                              className="bg-blue-600 hover:bg-blue-700"
                             >
                               <Eye className="w-4 h-4 mr-2" />
-                              View
+                              View Report
                             </Button>
                             {report.filePath && (
                               <Button 
                                 variant="outline" 
                                 size="sm"
-                                onClick={() => {
-                                  const downloadUrl = report.fileUrl || `/api/files/${report.filePath}`;
-                                  window.open(downloadUrl, '_blank');
-                                }}
+                                onClick={() => downloadReport(report)}
                               >
                                 <Download className="w-4 h-4 mr-2" />
                                 Download
@@ -1466,12 +1667,31 @@ export default function PatientManagement() {
                   ))}
                 </div>
               ) : (
-                <div className="text-center py-8">
-                  <FileText className="h-12 w-12 text-muted-foreground mx-auto mb-4" />
-                  <p className="text-muted-foreground">No reports found for this patient</p>
-                  <p className="text-sm text-muted-foreground mt-2">
-                    Create a report using the "Report" button to get started
-                  </p>
+                <div className="text-center py-12">
+                  <div className="bg-blue-50 rounded-lg p-8 inline-block">
+                    <FileText className="h-16 w-16 text-blue-300 mx-auto mb-4" />
+                    <h3 className="font-medium text-lg mb-2">No Reports Available</h3>
+                    <p className="text-muted-foreground mb-4">
+                      This patient doesn't have any generated reports yet.
+                    </p>
+                    <div className="space-y-2 text-sm text-muted-foreground">
+                      <p>• Click the <strong>"Report"</strong> button to create a new report</p>
+                      <p>• Select a template and generate your first report</p>
+                      <p>• Generated reports will appear here for viewing</p>
+                    </div>
+                    <Button 
+                      variant="outline" 
+                      size="sm" 
+                      className="mt-4"
+                      onClick={() => {
+                        setShowViewReportDialog(false);
+                        setShowReportTemplateModal(true);
+                      }}
+                    >
+                      <FileText className="w-4 h-4 mr-2" />
+                      Create First Report
+                    </Button>
+                  </div>
                 </div>
               )}
             </div>

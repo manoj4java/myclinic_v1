@@ -7,7 +7,7 @@ export type SidebarMenu =
   | 'patients' 
   | 'analytics' 
   | 'reports' 
-  | 'report-templates'
+  | 'templates'
   | 'user-management' 
   | 'settings' 
   | 'notifications'
@@ -23,7 +23,7 @@ export type ModuleAction =
   | 'print' 
   | 'upload_files';
 
-export type Module = 'patients' | 'users' | 'analytics' | 'reports' | 'settings';
+export type Module = 'patients' | 'users' | 'analytics' | 'reports' | 'templates' | 'settings';
 
 export interface Permission {
   module: Module;
@@ -51,7 +51,7 @@ export const ROLE_PERMISSIONS: RolePermissions = {
       'patients', 
       'analytics',
       'reports',
-      'report-templates',
+      'templates',
       'user-management',
       'settings',
       'notifications',
@@ -73,6 +73,10 @@ export const ROLE_PERMISSIONS: RolePermissions = {
       {
         module: 'reports',
         actions: ['view', 'add', 'edit', 'delete', 'export', 'print']
+      },
+      {
+        module: 'templates',
+        actions: ['view', 'add', 'edit', 'delete', 'export', 'import']
       },
       {
         module: 'settings',
