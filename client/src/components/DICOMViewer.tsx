@@ -52,7 +52,7 @@ import {
   FlipVertical,
   RotateCcw,
   ArrowRight,
-  Angle,
+
   Palette,
   Eye,
   EyeOff,
@@ -69,7 +69,13 @@ import {
   FileImage,
   Trash2,
   Minus,
-  Plus
+  Plus,
+  Calculator,
+  Hash,
+  Thermometer,
+  Archive,
+  FolderDown,
+  MousePointer
 } from 'lucide-react';
 
 interface DICOMViewerProps {
@@ -115,6 +121,22 @@ export function DICOMViewer({ imageUrl, imageUrls, initialImageIndex = 0, patien
   const [viewportsLinked, setViewportsLinked] = useState(false);
   const [isFlippedHorizontal, setIsFlippedHorizontal] = useState(false);
   const [isFlippedVertical, setIsFlippedVertical] = useState(false);
+  
+  // HU and Angle measurement controls
+  const [showHUValues, setShowHUValues] = useState(true);
+  const [huPrecision, setHUPrecision] = useState(1); // Decimal places for HU display
+  const [anglePrecision, setAnglePrecision] = useState(1); // Decimal places for angle display
+  const [angleUnit, setAngleUnit] = useState<'degrees' | 'radians'>('degrees');
+  const [huCalibration, setHUCalibration] = useState({ slope: 1, intercept: -1024 }); // Default DICOM calibration
+  
+  // Mouse tracking for HU display
+  const [mousePosition, setMousePosition] = useState({ x: 0, y: 0 });
+  const [currentHU, setCurrentHU] = useState<number | null>(null);
+  const [showHUOverlay, setShowHUOverlay] = useState(false);
+  
+  // ZIP export state
+  const [isExportingZip, setIsExportingZip] = useState(false);
+  const [exportProgress, setExportProgress] = useState(0);
   
   // Initialize images array from props
   useEffect(() => {
@@ -339,6 +361,59 @@ export function DICOMViewer({ imageUrl, imageUrls, initialImageIndex = 0, patien
       loadImage();
     }
   }, [isInitialized, currentImageIndex, images]);
+
+  // Auto-play slideshow effect
+  useEffect(() => {
+    if (!isPlaying || images.length <= 1) return;
+    
+    const interval = setInterval(() => {
+      setCurrentImageIndex((prevIndex) => {
+        if (prevIndex >= images.length - 1) {
+          // Loop back to first image or stop playing (user preference)
+          return 0; // Loop to start
+        }
+        return prevIndex + 1;
+      });
+    }, cineSpeed * 50); // cineSpeed controls the delay (50ms * cineSpeed)
+    
+    return () => clearInterval(interval);
+  }, [isPlaying, images.length, cineSpeed]);
+
+  // Keyboard shortcuts for image navigation
+  useEffect(() => {
+    if (images.length <= 1) return;
+    
+    const handleKeyPress = (event: KeyboardEvent) => {
+      switch (event.key) {
+        case 'ArrowLeft':
+        case 'ArrowUp':
+          event.preventDefault();
+          setCurrentImageIndex(prev => Math.max(0, prev - 1));
+          break;
+        case 'ArrowRight':
+        case 'ArrowDown':
+          event.preventDefault();
+          setCurrentImageIndex(prev => Math.min(images.length - 1, prev + 1));
+          break;
+        case 'Home':
+          event.preventDefault();
+          setCurrentImageIndex(0);
+          break;
+        case 'End':
+          event.preventDefault();
+          setCurrentImageIndex(images.length - 1);
+          break;
+        case ' ':
+        case 'Space':
+          event.preventDefault();
+          setIsPlaying(prev => !prev);
+          break;
+      }
+    };
+    
+    document.addEventListener('keydown', handleKeyPress);
+    return () => document.removeEventListener('keydown', handleKeyPress);
+  }, [images.length]);
 
   const loadImage = async () => {
     if (!viewportRef.current) {
@@ -712,13 +787,8 @@ export function DICOMViewer({ imageUrl, imageUrls, initialImageIndex = 0, patien
   };
 
   const downloadImage = () => {
-    if (!viewportRef.current) return;
-    
-    const canvas = cornerstone.getEnabledElement(viewportRef.current).canvas;
-    const link = document.createElement('a');
-    link.download = `medical-image-${Date.now()}.png`;
-    link.href = canvas.toDataURL();
-    link.click();
+    // Use the enhanced export function for consistency
+    exportCurrentImageAsPNG();
   };
 
   // Multi-image navigation functions
@@ -736,6 +806,84 @@ export function DICOMViewer({ imageUrl, imageUrls, initialImageIndex = 0, patien
 
   const goToFirstImage = () => {
     setCurrentImageIndex(0);
+  };
+
+  // HU (Hounsfield Units) calculation functions
+  const calculateHU = (pixelValue: number): number => {
+    // HU = slope * pixelValue + intercept
+    return huCalibration.slope * pixelValue + huCalibration.intercept;
+  };
+
+  const formatHUValue = (huValue: number): string => {
+    return huPrecision === 0 ? Math.round(huValue).toString() : huValue.toFixed(huPrecision);
+  };
+
+  const getHUFromImageCoordinate = (x: number, y: number): number | null => {
+    if (!viewportRef.current || !imageData) return null;
+    
+    try {
+      const enabledElement = cornerstone.getEnabledElement(viewportRef.current);
+      if (!enabledElement || !enabledElement.image) return null;
+      
+      // Convert canvas coordinates to image coordinates
+      const imagePoint = cornerstone.canvasToPixel(viewportRef.current, { x, y });
+      
+      // Get pixel data from the image
+      const pixelData = enabledElement.image.getPixelData();
+      const width = enabledElement.image.width;
+      const height = enabledElement.image.height;
+      
+      const imageX = Math.round(imagePoint.x);
+      const imageY = Math.round(imagePoint.y);
+      
+      // Ensure coordinates are within image bounds
+      if (imageX >= 0 && imageX < width && imageY >= 0 && imageY < height) {
+        const pixelIndex = imageY * width + imageX;
+        const pixelValue = pixelData[pixelIndex];
+        return calculateHU(pixelValue);
+      }
+    } catch (error) {
+      console.warn('Error calculating HU value:', error);
+    }
+    
+    return null;
+  };
+
+  // Angle measurement helper functions
+  const formatAngleValue = (angleRadians: number): string => {
+    const angleValue = angleUnit === 'degrees' ? 
+      (angleRadians * 180 / Math.PI) : angleRadians;
+    
+    const formatted = anglePrecision === 0 ? 
+      Math.round(angleValue).toString() : angleValue.toFixed(anglePrecision);
+    
+    return `${formatted}${angleUnit === 'degrees' ? '°' : ' rad'}`;
+  };
+
+  // Mouse event handlers for HU display
+  const handleMouseMove = (event: React.MouseEvent<HTMLDivElement>) => {
+    if (!showHUValues || !viewportRef.current) return;
+    
+    const rect = viewportRef.current.getBoundingClientRect();
+    const x = event.clientX - rect.left;
+    const y = event.clientY - rect.top;
+    
+    setMousePosition({ x, y });
+    
+    // Calculate HU value at current mouse position
+    const huValue = getHUFromImageCoordinate(x, y);
+    setCurrentHU(huValue);
+  };
+
+  const handleMouseEnter = () => {
+    if (showHUValues) {
+      setShowHUOverlay(true);
+    }
+  };
+
+  const handleMouseLeave = () => {
+    setShowHUOverlay(false);
+    setCurrentHU(null);
   };
 
   const goToLastImage = () => {
@@ -778,6 +926,37 @@ export function DICOMViewer({ imageUrl, imageUrls, initialImageIndex = 0, patien
     cornerstone.setViewport(viewportRef.current, viewport);
   };
 
+  // Enhanced angle tool with custom event handlers
+  const enhanceAngleTool = () => {
+    if (!viewportRef.current || !cornerstoneTools.AngleTool) return;
+    
+    try {
+      const element = viewportRef.current;
+      
+      // Listen for angle measurement completion
+      element.addEventListener('cornerstonetoolsmeasurementcompleted', (event: any) => {
+        if (event.detail.toolType === 'Angle') {
+          const measurement = event.detail;
+          if (measurement.angleRadians) {
+            console.log(`Angle measurement: ${formatAngleValue(measurement.angleRadians)}`);
+          }
+        }
+      });
+      
+      // Listen for angle measurement modification
+      element.addEventListener('cornerstonetoolsmeasurementmodified', (event: any) => {
+        if (event.detail.toolType === 'Angle') {
+          const measurement = event.detail;
+          if (measurement.angleRadians) {
+            console.log(`Angle modified: ${formatAngleValue(measurement.angleRadians)}`);
+          }
+        }
+      });
+    } catch (error) {
+      console.warn('Error enhancing angle tool:', error);
+    }
+  };
+
   // New tool activation function with enhanced features
   const onActivateTool = (toolName: string) => {
     console.log('Activating tool:', toolName);
@@ -796,6 +975,11 @@ export function DICOMViewer({ imageUrl, imageUrls, initialImageIndex = 0, patien
         break;
       case 'darkLightMode':
         setDarkMode(!darkMode);
+        break;
+      case 'Angle':
+        // Activate angle tool with enhancements
+        activateTool(toolName);
+        enhanceAngleTool();
         break;
       default:
         // Use existing activateTool for standard tools
@@ -842,895 +1026,669 @@ export function DICOMViewer({ imageUrl, imageUrls, initialImageIndex = 0, patien
     }
   };
 
+  // ZIP Export function for multiple images
+  const exportAllImagesToZip = async () => {
+    if (images.length === 0) {
+      console.warn('No images to export');
+      return;
+    }
+
+    setIsExportingZip(true);
+    setExportProgress(0);
+
+    try {
+      // Import JSZip dynamically (you'll need to install it: npm install jszip)
+      const JSZip = (await import('jszip')).default;
+      const zip = new JSZip();
+
+      const totalImages = images.length;
+      let processedImages = 0;
+
+      // Process each image
+      for (let i = 0; i < images.length; i++) {
+        try {
+          setExportProgress(Math.round((processedImages / totalImages) * 100));
+
+          // Load image into viewport temporarily if not current
+          const originalIndex = currentImageIndex;
+          if (i !== currentImageIndex) {
+            setCurrentImageIndex(i);
+            // Wait for image to load
+            await new Promise(resolve => setTimeout(resolve, 500));
+          }
+
+          // Get canvas data
+          if (viewportRef.current) {
+            const enabledElement = cornerstone.getEnabledElement(viewportRef.current);
+            if (enabledElement && enabledElement.canvas) {
+              const canvas = enabledElement.canvas;
+              
+              // Convert canvas to blob
+              const blob = await new Promise<Blob>((resolve) => {
+                canvas.toBlob((blob: Blob | null) => {
+                  resolve(blob!);
+                }, 'image/png');
+              });
+
+              // Add to ZIP with meaningful filename
+              const filename = `image_${String(i + 1).padStart(3, '0')}_${patientInfo?.name || 'patient'}.png`;
+              zip.file(filename, blob);
+            }
+          }
+
+          processedImages++;
+          
+          // Restore original image if we changed it
+          if (i !== originalIndex) {
+            setCurrentImageIndex(originalIndex);
+          }
+        } catch (imageError) {
+          console.warn(`Failed to export image ${i + 1}:`, imageError);
+        }
+      }
+
+      // Generate ZIP file
+      setExportProgress(95);
+      const zipBlob = await zip.generateAsync({ type: 'blob' });
+
+      // Download ZIP file
+      const link = document.createElement('a');
+      const timestamp = new Date().toISOString().slice(0, 19).replace(/:/g, '-');
+      const patientName = patientInfo?.name ? patientInfo.name.replace(/[^a-zA-Z0-9]/g, '_') : 'unknown';
+      link.download = `DICOM_Export_${patientName}_${timestamp}.zip`;
+      link.href = URL.createObjectURL(zipBlob);
+      link.click();
+
+      // Cleanup
+      URL.revokeObjectURL(link.href);
+      setExportProgress(100);
+
+      console.log(`Successfully exported ${processedImages} images to ZIP`);
+    } catch (error) {
+      console.error('Error creating ZIP export:', error);
+    } finally {
+      setIsExportingZip(false);
+      setTimeout(() => setExportProgress(0), 1000);
+    }
+  };
+
+  // Export current image as high-quality PNG
+  const exportCurrentImageAsPNG = () => {
+    if (!viewportRef.current) return;
+    
+    try {
+      const enabledElement = cornerstone.getEnabledElement(viewportRef.current);
+      if (enabledElement && enabledElement.canvas) {
+        const canvas = enabledElement.canvas;
+        const link = document.createElement('a');
+        const timestamp = new Date().toISOString().slice(0, 19).replace(/:/g, '-');
+        const patientName = patientInfo?.name ? patientInfo.name.replace(/[^a-zA-Z0-9]/g, '_') : 'unknown';
+        const imageNum = String(currentImageIndex + 1).padStart(3, '0');
+        
+        link.download = `DICOM_${patientName}_Image${imageNum}_${timestamp}.png`;
+        link.href = canvas.toDataURL('image/png');
+        link.click();
+      }
+    } catch (error) {
+      console.error('Error exporting current image:', error);
+    }
+  };
+
   // Check if multi-image navigation should be shown
   const showMultiImageControls = images.length > 1;
 
+  // Toggle fullscreen mode
+  const toggleFullscreen = () => {
+    const element = document.documentElement;
+    if (!document.fullscreenElement) {
+      element.requestFullscreen?.() ||
+      (element as any).webkitRequestFullscreen?.() ||
+      (element as any).msRequestFullscreen?.();
+    } else {
+      document.exitFullscreen?.() ||
+      (document as any).webkitExitFullscreen?.() ||
+      (document as any).msExitFullscreen?.();
+    }
+  };
+
   return (
-    <div className="h-full bg-black text-white overflow-hidden flex flex-col" data-testid="dicom-viewer">
-      {/* Patient Info Bar */}
-      <div className="bg-gray-900 p-2 border-b border-gray-700 text-sm">
-        <div className="flex items-center justify-between">
-          <div className="flex items-center space-x-6">
-            {patientInfo && (
-              <>
-                <div>
-                  <span className="text-gray-400">Patient:</span>
-                  <span className="ml-2 font-medium text-white">{patientInfo.name}</span>
-                </div>
-                <div>
-                  <span className="text-gray-400">ID:</span>
-                  <span className="ml-2 font-mono text-white">{patientInfo.id.slice(-8).toUpperCase()}</span>
-                </div>
-                <div>
-                  <span className="text-gray-400">Age/Sex:</span>
-                  <span className="ml-2 text-white">{patientInfo.age}Y / {patientInfo.sex.toUpperCase()}</span>
-                </div>
-              </>
-            )}
-          </div>
-          <Badge variant="secondary" className="bg-blue-700 text-blue-100">
-            {isDICOM ? 'DICOM' : 'IMAGE'}
-          </Badge>
-        </div>
-      </div>
-
-      <div className="flex flex-1 min-h-0">
-        {/* Tool Palette - Refactored with Collapsible Panels */}
+    <div className="h-full w-full bg-black text-white overflow-hidden flex flex-col min-h-screen max-h-screen" data-testid="dicom-viewer">
+      {/* Compact Top Toolbar - Medical Professional Interface */}
+      <div className="bg-gray-900 border-b border-gray-700">
+        {/* Main Tool Panels - Horizontal Layout */}
         <TooltipProvider>
-          <div className="w-80 bg-gray-900 border-r border-gray-700 overflow-y-auto">
-            <Accordion type="multiple" defaultValue={["mouse", "annotations", "view"]} className="w-full">
-              
-              {/* Mouse Functions Panel */}
-              <AccordionItem value="mouse" className="border-gray-700">
-                <AccordionTrigger className="text-white hover:text-gray-300 px-4 py-2">
-                  <div className="flex items-center space-x-2">
-                    <Move className="w-4 h-4" />
-                    <span>Mouse Functions</span>
+          <div className="flex items-center justify-between p-2 space-x-4">
+            {/* Left Section: Primary Tools */}
+            <div className="flex items-center space-x-4">
+              {/* Mouse Functions - Compact */}
+              <div className="flex items-center space-x-1 bg-gray-800 rounded px-2 py-1">
+                <span className="text-xs text-gray-400 mr-2">Mouse:</span>
+                <Tooltip>
+                  <TooltipTrigger asChild>
+                    <Button
+                      size="sm"
+                      variant={activeTool === 'Zoom' ? 'default' : 'ghost'}
+                      className="h-6 w-6 p-0 text-white hover:bg-gray-700"
+                      onClick={() => onActivateTool('Zoom')}
+                    >
+                      <ZoomIn className="w-3 h-3" />
+                    </Button>
+                  </TooltipTrigger>
+                  <TooltipContent>Zoom</TooltipContent>
+                </Tooltip>
+                
+                <Tooltip>
+                  <TooltipTrigger asChild>
+                    <Button
+                      size="sm"
+                      variant={activeTool === 'Pan' ? 'default' : 'ghost'}
+                      className="h-6 w-6 p-0 text-white hover:bg-gray-700"
+                      onClick={() => onActivateTool('Pan')}
+                    >
+                      <Move className="w-3 h-3" />
+                    </Button>
+                  </TooltipTrigger>
+                  <TooltipContent>Pan</TooltipContent>
+                </Tooltip>
+                
+                <Tooltip>
+                  <TooltipTrigger asChild>
+                    <Button
+                      size="sm"
+                      variant={activeTool === 'Wwwc' ? 'default' : 'ghost'}
+                      className="h-6 w-6 p-0 text-white hover:bg-gray-700"
+                      onClick={() => onActivateTool('Wwwc')}
+                    >
+                      <Contrast className="w-3 h-3" />
+                    </Button>
+                  </TooltipTrigger>
+                  <TooltipContent>Window/Level</TooltipContent>
+                </Tooltip>
+              </div>
+
+              {/* Orientation Tools - Compact */}
+              <div className="flex items-center space-x-1 bg-gray-800 rounded px-2 py-1">
+                <span className="text-xs text-gray-400 mr-2">Orient:</span>
+                <Tooltip>
+                  <TooltipTrigger asChild>
+                    <Button
+                      size="sm"
+                      variant="ghost"
+                      className="h-6 w-6 p-0 text-white hover:bg-gray-700"
+                      onClick={rotate}
+                    >
+                      <RotateCw className="w-3 h-3" />
+                    </Button>
+                  </TooltipTrigger>
+                  <TooltipContent>Rotate</TooltipContent>
+                </Tooltip>
+                
+                <Tooltip>
+                  <TooltipTrigger asChild>
+                    <Button
+                      size="sm"
+                      variant="ghost"
+                      className="h-6 w-6 p-0 text-white hover:bg-gray-700"
+                      onClick={() => onViewportAction('flipHorizontal')}
+                    >
+                      <FlipHorizontal className="w-3 h-3" />
+                    </Button>
+                  </TooltipTrigger>
+                  <TooltipContent>Flip H</TooltipContent>
+                </Tooltip>
+                
+                <Tooltip>
+                  <TooltipTrigger asChild>
+                    <Button
+                      size="sm"
+                      variant="ghost"
+                      className="h-6 w-6 p-0 text-white hover:bg-gray-700"
+                      onClick={() => onViewportAction('flipVertical')}
+                    >
+                      <FlipVertical className="w-3 h-3" />
+                    </Button>
+                  </TooltipTrigger>
+                  <TooltipContent>Flip V</TooltipContent>
+                </Tooltip>
+                
+                <Tooltip>
+                  <TooltipTrigger asChild>
+                    <Button
+                      size="sm"
+                      variant="ghost"
+                      className="h-6 w-6 p-0 text-white hover:bg-gray-700"
+                      onClick={() => onViewportAction('invertColors')}
+                    >
+                      <RefreshCw className="w-3 h-3" />
+                    </Button>
+                  </TooltipTrigger>
+                  <TooltipContent>Invert</TooltipContent>
+                </Tooltip>
+              </div>
+
+              {/* Annotation Tools - Compact */}
+              <div className="flex items-center space-x-1 bg-gray-800 rounded px-2 py-1">
+                <span className="text-xs text-gray-400 mr-2">Measure:</span>
+                <Tooltip>
+                  <TooltipTrigger asChild>
+                    <Button
+                      size="sm"
+                      variant={activeTool === 'Length' ? 'default' : 'ghost'}
+                      className="h-6 w-6 p-0 text-white hover:bg-gray-700"
+                      onClick={() => onActivateTool('Length')}
+                    >
+                      <Ruler className="w-3 h-3" />
+                    </Button>
+                  </TooltipTrigger>
+                  <TooltipContent>Ruler</TooltipContent>
+                </Tooltip>
+                
+                <Tooltip>
+                  <TooltipTrigger asChild>
+                    <Button
+                      size="sm"
+                      variant={activeTool === 'Angle' ? 'default' : 'ghost'}
+                      className="h-6 w-6 p-0 text-white hover:bg-gray-700"
+                      onClick={() => onActivateTool('Angle')}
+                    >
+                      <Triangle className="w-3 h-3" />
+                    </Button>
+                  </TooltipTrigger>
+                  <TooltipContent>Angle</TooltipContent>
+                </Tooltip>
+                
+                <Tooltip>
+                  <TooltipTrigger asChild>
+                    <Button
+                      size="sm"
+                      variant={activeTool === 'RectangleRoi' ? 'default' : 'ghost'}
+                      className="h-6 w-6 p-0 text-white hover:bg-gray-700"
+                      onClick={() => onActivateTool('RectangleRoi')}
+                    >
+                      <Square className="w-3 h-3" />
+                    </Button>
+                  </TooltipTrigger>
+                  <TooltipContent>Rectangle ROI</TooltipContent>
+                </Tooltip>
+                
+                <Tooltip>
+                  <TooltipTrigger asChild>
+                    <Button
+                      size="sm"
+                      variant={activeTool === 'EllipticalRoi' ? 'default' : 'ghost'}
+                      className="h-6 w-6 p-0 text-white hover:bg-gray-700"
+                      onClick={() => onActivateTool('EllipticalRoi')}
+                    >
+                      <Circle className="w-3 h-3" />
+                    </Button>
+                  </TooltipTrigger>
+                  <TooltipContent>Ellipse ROI</TooltipContent>
+                </Tooltip>
+                
+                <Tooltip>
+                  <TooltipTrigger asChild>
+                    <Button
+                      size="sm"
+                      variant={activeTool === 'Probe' ? 'default' : 'ghost'}
+                      className="h-6 w-6 p-0 text-white hover:bg-gray-700"
+                      onClick={() => onActivateTool('Probe')}
+                    >
+                      <Target className="w-3 h-3" />
+                    </Button>
+                  </TooltipTrigger>
+                  <TooltipContent>Pixel Probe</TooltipContent>
+                </Tooltip>
+              </div>
+
+              {/* Misc Tools - Compact */}
+              <div className="flex items-center space-x-1 bg-gray-800 rounded px-2 py-1">
+                <span className="text-xs text-gray-400 mr-2">Misc:</span>
+                <Tooltip>
+                  <TooltipTrigger asChild>
+                    <Button
+                      size="sm"
+                      variant="ghost"
+                      className="h-6 w-6 p-0 text-white hover:bg-gray-700"
+                      onClick={resetView}
+                    >
+                      <Home className="w-3 h-3" />
+                    </Button>
+                  </TooltipTrigger>
+                  <TooltipContent>Reset View</TooltipContent>
+                </Tooltip>
+                
+                <Tooltip>
+                  <TooltipTrigger asChild>
+                    <Button
+                      size="sm"
+                      variant="ghost"
+                      className="h-6 w-6 p-0 text-white hover:bg-gray-700"
+                      onClick={() => loadImage()}
+                    >
+                      <RefreshCw className="w-3 h-3" />
+                    </Button>
+                  </TooltipTrigger>
+                  <TooltipContent>Refresh</TooltipContent>
+                </Tooltip>
+                
+                <Tooltip>
+                  <TooltipTrigger asChild>
+                    <Button
+                      size="sm"
+                      variant="ghost"
+                      className="h-6 w-6 p-0 text-white hover:bg-gray-700"
+                      onClick={() => onActivateTool('darkLightMode')}
+                    >
+                      {darkMode ? <Sun className="w-3 h-3" /> : <Moon className="w-3 h-3" />}
+                    </Button>
+                  </TooltipTrigger>
+                  <TooltipContent>{darkMode ? 'Light' : 'Dark'} Mode</TooltipContent>
+                </Tooltip>
+                
+                <Tooltip>
+                  <TooltipTrigger asChild>
+                    <Button
+                      size="sm"
+                      variant="ghost"
+                      className="h-6 w-6 p-0 text-white hover:bg-gray-700"
+                      onClick={toggleFullscreen}
+                    >
+                      <Maximize2 className="w-3 h-3" />
+                    </Button>
+                  </TooltipTrigger>
+                  <TooltipContent>Toggle Full Screen</TooltipContent>
+                </Tooltip>
+                
+                <Tooltip>
+                  <TooltipTrigger asChild>
+                    <Button
+                      size="sm"
+                      variant="ghost"
+                      className="h-6 w-6 p-0 text-white hover:bg-gray-700"
+                    >
+                      <Settings className="w-3 h-3" />
+                    </Button>
+                  </TooltipTrigger>
+                  <TooltipContent>Settings</TooltipContent>
+                </Tooltip>
+                
+                <Tooltip>
+                  <TooltipTrigger asChild>
+                    <Button
+                      size="sm"
+                      variant="ghost"
+                      className="h-6 w-6 p-0 text-white hover:bg-gray-700"
+                      onClick={printImage}
+                    >
+                      <Printer className="w-3 h-3" />
+                    </Button>
+                  </TooltipTrigger>
+                  <TooltipContent>Print</TooltipContent>
+                </Tooltip>
+              </div>
+
+              {/* Sync Tools - Compact */}
+              <div className="flex items-center space-x-1 bg-gray-800 rounded px-2 py-1">
+                <span className="text-xs text-gray-400 mr-2">Sync:</span>
+                <Tooltip>
+                  <TooltipTrigger asChild>
+                    <Button
+                      size="sm"
+                      variant={syncScroll ? 'default' : 'ghost'}
+                      className="h-6 w-6 p-0 text-white hover:bg-gray-700"
+                      onClick={toggleSyncScroll}
+                    >
+                      <MousePointer className="w-3 h-3" />
+                    </Button>
+                  </TooltipTrigger>
+                  <TooltipContent>Sync Scroll</TooltipContent>
+                </Tooltip>
+                
+                <Tooltip>
+                  <TooltipTrigger asChild>
+                    <Button
+                      size="sm"
+                      variant={syncZoom ? 'default' : 'ghost'}
+                      className="h-6 w-6 p-0 text-white hover:bg-gray-700"
+                      onClick={toggleSyncZoom}
+                    >
+                      <ZoomIn className="w-3 h-3" />
+                    </Button>
+                  </TooltipTrigger>
+                  <TooltipContent>Sync Zoom</TooltipContent>
+                </Tooltip>
+                
+                <Tooltip>
+                  <TooltipTrigger asChild>
+                    <Button
+                      size="sm"
+                      variant={syncWindowLevel ? 'default' : 'ghost'}
+                      className="h-6 w-6 p-0 text-white hover:bg-gray-700"
+                      onClick={toggleSyncWindowLevel}
+                    >
+                      <Contrast className="w-3 h-3" />
+                    </Button>
+                  </TooltipTrigger>
+                  <TooltipContent>Sync W/L</TooltipContent>
+                </Tooltip>
+                
+                <Tooltip>
+                  <TooltipTrigger asChild>
+                    <Button
+                      size="sm"
+                      variant={viewportsLinked ? 'default' : 'ghost'}
+                      className="h-6 w-6 p-0 text-white hover:bg-gray-700"
+                      onClick={toggleLinkViewports}
+                    >
+                      {viewportsLinked ? <Link className="w-3 h-3" /> : <Unlink className="w-3 h-3" />}
+                    </Button>
+                  </TooltipTrigger>
+                  <TooltipContent>Link Viewports</TooltipContent>
+                </Tooltip>
+              </div>
+            </div>
+
+            {/* Center Section: Patient Info Compact */}
+            <div className="flex items-center space-x-3 text-xs">
+              {patientInfo && (
+                <>
+                  <div className="bg-blue-900/50 px-2 py-1 rounded">
+                    <span className="text-blue-200 font-medium">{patientInfo.name}</span>
                   </div>
-                </AccordionTrigger>
-                <AccordionContent className="px-4 pb-4">
-                  <div className="grid grid-cols-2 gap-2">
-                    <Tooltip>
-                      <TooltipTrigger asChild>
-                        <Button
-                          size="sm"
-                          variant={activeTool === 'Zoom' ? 'default' : 'ghost'}
-                          className="text-white hover:bg-gray-700"
-                          onClick={() => onActivateTool('Zoom')}
-                          data-testid="tool-zoom-in"
-                        >
-                          <ZoomIn className="w-4 h-4" />
-                        </Button>
-                      </TooltipTrigger>
-                      <TooltipContent>Zoom In</TooltipContent>
-                    </Tooltip>
+                  <span className="text-gray-400">•</span>
+                  <span className="text-gray-300">{patientInfo.age}Y {patientInfo.sex.toUpperCase()}</span>
+                  <span className="text-gray-400">•</span>
+                  <Badge variant="secondary" className="bg-blue-700 text-blue-100 text-xs">
+                    {isDICOM ? 'DICOM' : 'IMAGE'}
+                  </Badge>
+                </>
+              )}
+            </div>
 
-                    <Tooltip>
-                      <TooltipTrigger asChild>
-                        <Button
-                          size="sm"
-                          variant="ghost"
-                          className="text-white hover:bg-gray-700"
-                          onClick={zoomOut}
-                          data-testid="tool-zoom-out"
-                        >
-                          <ZoomOut className="w-4 h-4" />
-                        </Button>
-                      </TooltipTrigger>
-                      <TooltipContent>Zoom Out</TooltipContent>
-                    </Tooltip>
-
-                    <Tooltip>
-                      <TooltipTrigger asChild>
-                        <Button
-                          size="sm"
-                          variant={activeTool === 'Pan' ? 'default' : 'ghost'}
-                          className="text-white hover:bg-gray-700"
-                          onClick={() => onActivateTool('Pan')}
-                          data-testid="tool-move"
-                        >
-                          <Move className="w-4 h-4" />
-                        </Button>
-                      </TooltipTrigger>
-                      <TooltipContent>Move (Pan)</TooltipContent>
-                    </Tooltip>
-
-                    <Tooltip>
-                      <TooltipTrigger asChild>
-                        <Button
-                          size="sm"
-                          variant={activeTool === 'FreehandRoi' ? 'default' : 'ghost'}
-                          className="text-white hover:bg-gray-700"
-                          onClick={() => onActivateTool('FreehandRoi')}
-                          data-testid="tool-pen"
-                        >
-                          <PenTool className="w-4 h-4" />
-                        </Button>
-                      </TooltipTrigger>
-                      <TooltipContent>Pen Tool</TooltipContent>
-                    </Tooltip>
-
-                    <Tooltip>
-                      <TooltipTrigger asChild>
-                        <Button
-                          size="sm"
-                          variant={activeTool === 'Length' ? 'default' : 'ghost'}
-                          className="text-white hover:bg-gray-700 col-span-2"
-                          onClick={() => onActivateTool('Length')}
-                          data-testid="tool-ruler"
-                        >
-                          <Ruler className="w-4 h-4 mr-2" />
-                          <span className="text-xs">Ruler</span>
-                        </Button>
-                      </TooltipTrigger>
-                      <TooltipContent>Ruler Tool</TooltipContent>
-                    </Tooltip>
-                  </div>
-                </AccordionContent>
-              </AccordionItem>
-
-              {/* Orientation Panel */}
-              <AccordionItem value="orientation" className="border-gray-700">
-                <AccordionTrigger className="text-white hover:text-gray-300 px-4 py-2">
-                  <div className="flex items-center space-x-2">
-                    <RotateCw className="w-4 h-4" />
-                    <span>Orientation</span>
-                  </div>
-                </AccordionTrigger>
-                <AccordionContent className="px-4 pb-4">
-                  <div className="grid grid-cols-2 gap-2">
-                    <Tooltip>
-                      <TooltipTrigger asChild>
-                        <Button
-                          size="sm"
-                          variant="ghost"
-                          className="text-white hover:bg-gray-700"
-                          onClick={rotate}
-                          data-testid="tool-rotate-cw"
-                        >
-                          <RotateCw className="w-4 h-4" />
-                        </Button>
-                      </TooltipTrigger>
-                      <TooltipContent>Rotate Clockwise</TooltipContent>
-                    </Tooltip>
-
-                    <Tooltip>
-                      <TooltipTrigger asChild>
-                        <Button
-                          size="sm"
-                          variant="ghost"
-                          className="text-white hover:bg-gray-700"
-                          onClick={() => onViewportAction('flipHorizontal')}
-                          data-testid="tool-flip-horizontal"
-                        >
-                          <FlipHorizontal className="w-4 h-4" />
-                        </Button>
-                      </TooltipTrigger>
-                      <TooltipContent>Flip Horizontal</TooltipContent>
-                    </Tooltip>
-
-                    <Tooltip>
-                      <TooltipTrigger asChild>
-                        <Button
-                          size="sm"
-                          variant="ghost"
-                          className="text-white hover:bg-gray-700"
-                          onClick={() => onViewportAction('flipVertical')}
-                          data-testid="tool-flip-vertical"
-                        >
-                          <FlipVertical className="w-4 h-4" />
-                        </Button>
-                      </TooltipTrigger>
-                      <TooltipContent>Flip Vertical</TooltipContent>
-                    </Tooltip>
-
-                    <Tooltip>
-                      <TooltipTrigger asChild>
-                        <Button
-                          size="sm"
-                          variant="ghost"
-                          className="text-white hover:bg-gray-700"
-                          onClick={() => onViewportAction('resetOrientation')}
-                          data-testid="tool-reset-orientation"
-                        >
-                          <RotateCcw className="w-4 h-4" />
-                        </Button>
-                      </TooltipTrigger>
-                      <TooltipContent>Reset Orientation</TooltipContent>
-                    </Tooltip>
-                  </div>
-                </AccordionContent>
-              </AccordionItem>
-
-              {/* Annotations Panel */}
-              <AccordionItem value="annotations" className="border-gray-700">
-                <AccordionTrigger className="text-white hover:text-gray-300 px-4 py-2">
-                  <div className="flex items-center space-x-2">
-                    <Square className="w-4 h-4" />
-                    <span>Annotations</span>
-                  </div>
-                </AccordionTrigger>
-                <AccordionContent className="px-4 pb-4 space-y-3">
-                  <div className="grid grid-cols-3 gap-2">
-                    <Tooltip>
-                      <TooltipTrigger asChild>
-                        <Button
-                          size="sm"
-                          variant={activeTool === 'RectangleRoi' ? 'default' : 'ghost'}
-                          className="text-white hover:bg-gray-700"
-                          onClick={() => onActivateTool('RectangleRoi')}
-                          data-testid="tool-square"
-                        >
-                          <Square className="w-4 h-4" />
-                        </Button>
-                      </TooltipTrigger>
-                      <TooltipContent>Rectangle</TooltipContent>
-                    </Tooltip>
-
-                    <Tooltip>
-                      <TooltipTrigger asChild>
-                        <Button
-                          size="sm"
-                          variant={activeTool === 'EllipticalRoi' ? 'default' : 'ghost'}
-                          className="text-white hover:bg-gray-700"
-                          onClick={() => onActivateTool('EllipticalRoi')}
-                          data-testid="tool-circle"
-                        >
-                          <Circle className="w-4 h-4" />
-                        </Button>
-                      </TooltipTrigger>
-                      <TooltipContent>Circle</TooltipContent>
-                    </Tooltip>
-
-                    <Tooltip>
-                      <TooltipTrigger asChild>
-                        <Button
-                          size="sm"
-                          variant={activeTool === 'Angle' ? 'default' : 'ghost'}
-                          className="text-white hover:bg-gray-700"
-                          onClick={() => onActivateTool('Angle')}
-                          data-testid="tool-triangle"
-                        >
-                          <Triangle className="w-4 h-4" />
-                        </Button>
-                      </TooltipTrigger>
-                      <TooltipContent>Angle Tool</TooltipContent>
-                    </Tooltip>
-
-                    <Tooltip>
-                      <TooltipTrigger asChild>
-                        <Button
-                          size="sm"
-                          variant={activeTool === 'ArrowAnnotate' ? 'default' : 'ghost'}
-                          className="text-white hover:bg-gray-700"
-                          onClick={() => onActivateTool('ArrowAnnotate')}
-                          data-testid="tool-text"
-                        >
-                          <Type className="w-4 h-4" />
-                        </Button>
-                      </TooltipTrigger>
-                      <TooltipContent>Text Tool</TooltipContent>
-                    </Tooltip>
-
-                    <Tooltip>
-                      <TooltipTrigger asChild>
-                        <Button
-                          size="sm"
-                          variant={activeTool === 'Probe' ? 'default' : 'ghost'}
-                          className="text-white hover:bg-gray-700"
-                          onClick={() => onActivateTool('Probe')}
-                          data-testid="tool-target"
-                        >
-                          <Target className="w-4 h-4" />
-                        </Button>
-                      </TooltipTrigger>
-                      <TooltipContent>Target (Crosshair)</TooltipContent>
-                    </Tooltip>
-
-                    <Tooltip>
-                      <TooltipTrigger asChild>
-                        <Button
-                          size="sm"
-                          variant="ghost"
-                          className="text-white hover:bg-gray-700"
-                          onClick={() => onActivateTool('arrowTool')}
-                          data-testid="tool-arrow"
-                        >
-                          <ArrowRight className="w-4 h-4" />
-                        </Button>
-                      </TooltipTrigger>
-                      <TooltipContent>Arrow Tool</TooltipContent>
-                    </Tooltip>
-
-                    <Tooltip>
-                      <TooltipTrigger asChild>
-                        <Button
-                          size="sm"
-                          variant="ghost"
-                          className="text-white hover:bg-gray-700"
-                          onClick={() => onActivateTool('freehandTool')}
-                          data-testid="tool-freehand"
-                        >
-                          <PenTool className="w-4 h-4" />
-                        </Button>
-                      </TooltipTrigger>
-                      <TooltipContent>Freehand Tool</TooltipContent>
-                    </Tooltip>
-
-                    <Tooltip>
-                      <TooltipTrigger asChild>
-                        <Button
-                          size="sm"
-                          variant="ghost"
-                          className="text-white hover:bg-gray-700"
-                          onClick={() => onActivateTool('deleteAnnotation')}
-                          data-testid="tool-delete"
-                        >
-                          <Trash2 className="w-4 h-4" />
-                        </Button>
-                      </TooltipTrigger>
-                      <TooltipContent>Delete Annotation</TooltipContent>
-                    </Tooltip>
-                  </div>
+            {/* Right Section: Navigation & Export */}
+            <div className="flex items-center space-x-4">
+              {/* Enhanced Image Navigation Panel - Compact */}
+              {showMultiImageControls && (
+                <div className="flex items-center space-x-1 bg-gray-800 rounded px-2 py-1">
+                  <span className="text-xs text-gray-400 mr-2">Images:</span>
                   
-                  {/* Color Picker and Opacity */}
-                  <div className="space-y-2">
-                    <div className="flex items-center space-x-2">
-                      <Palette className="w-4 h-4 text-gray-400" />
-                      <input
-                        type="color"
-                        value={annotationColor}
-                        onChange={(e) => setAnnotationColor(e.target.value)}
-                        className="w-8 h-6 rounded border-0 cursor-pointer"
-                        title="Annotation Color"
-                      />
-                      <span className="text-xs text-gray-400 flex-1">Color</span>
-                    </div>
-                    <div className="flex items-center space-x-2">
-                      <span className="text-xs text-gray-400 w-12">Opacity</span>
-                      <Slider
-                        value={[annotationOpacity * 100]}
-                        onValueChange={(values) => setAnnotationOpacity(values[0] / 100)}
-                        max={100}
-                        step={1}
-                        className="flex-1"
-                      />
-                      <span className="text-xs text-gray-400 w-8">{Math.round(annotationOpacity * 100)}%</span>
-                    </div>
-                  </div>
-                </AccordionContent>
-              </AccordionItem>
-
-              {/* View Functions Panel */}
-              <AccordionItem value="view" className="border-gray-700">
-                <AccordionTrigger className="text-white hover:text-gray-300 px-4 py-2">
-                  <div className="flex items-center space-x-2">
-                    <Eye className="w-4 h-4" />
-                    <span>View Functions</span>
-                  </div>
-                </AccordionTrigger>
-                <AccordionContent className="px-4 pb-4 space-y-3">
-                  <div className="grid grid-cols-3 gap-2">
-                    <Tooltip>
-                      <TooltipTrigger asChild>
-                        <Button
-                          size="sm"
-                          variant={activeTool === 'Wwwc' ? 'default' : 'ghost'}
-                          className="text-white hover:bg-gray-700"
-                          onClick={() => onActivateTool('Wwwc')}
-                          data-testid="tool-contrast"
-                        >
-                          <Contrast className="w-4 h-4" />
-                        </Button>
-                      </TooltipTrigger>
-                      <TooltipContent>Window/Level</TooltipContent>
-                    </Tooltip>
-
-                    <Tooltip>
-                      <TooltipTrigger asChild>
-                        <Button
-                          size="sm"
-                          variant="ghost"
-                          className="text-white hover:bg-gray-700"
-                          onClick={() => setIsPlaying(!isPlaying)}
-                          data-testid="tool-play"
-                        >
-                          <Play className="w-4 h-4" />
-                        </Button>
-                      </TooltipTrigger>
-                      <TooltipContent>Play</TooltipContent>
-                    </Tooltip>
-
-                    <Tooltip>
-                      <TooltipTrigger asChild>
-                        <Button
-                          size="sm"
-                          variant="ghost"
-                          className="text-white hover:bg-gray-700"
-                          onClick={() => setIsPlaying(false)}
-                          data-testid="tool-pause"
-                        >
-                          <Pause className="w-4 h-4" />
-                        </Button>
-                      </TooltipTrigger>
-                      <TooltipContent>Pause</TooltipContent>
-                    </Tooltip>
-
-                    <Tooltip>
-                      <TooltipTrigger asChild>
-                        <Button
-                          size="sm"
-                          variant="ghost"
-                          className="text-white hover:bg-gray-700"
-                          data-testid="tool-skip-back"
-                        >
-                          <SkipBack className="w-4 h-4" />
-                        </Button>
-                      </TooltipTrigger>
-                      <TooltipContent>Skip Back</TooltipContent>
-                    </Tooltip>
-
-                    <Tooltip>
-                      <TooltipTrigger asChild>
-                        <Button
-                          size="sm"
-                          variant="ghost"
-                          className="text-white hover:bg-gray-700"
-                          data-testid="tool-skip-forward"
-                        >
-                          <SkipForward className="w-4 h-4" />
-                        </Button>
-                      </TooltipTrigger>
-                      <TooltipContent>Skip Forward</TooltipContent>
-                    </Tooltip>
-
-                    <Tooltip>
-                      <TooltipTrigger asChild>
-                        <Button
-                          size="sm"
-                          variant="ghost"
-                          className="text-white hover:bg-gray-700"
-                          onClick={() => onViewportAction('invertColors')}
-                          data-testid="tool-invert"
-                        >
-                          <RefreshCw className="w-4 h-4" />
-                        </Button>
-                      </TooltipTrigger>
-                      <TooltipContent>Invert Colors</TooltipContent>
-                    </Tooltip>
-
-                    <Tooltip>
-                      <TooltipTrigger asChild>
-                        <Button
-                          size="sm"
-                          variant="ghost"
-                          className="text-white hover:bg-gray-700"
-                          onClick={() => onActivateTool('toggleAnnotations')}
-                          data-testid="tool-toggle-annotations"
-                        >
-                          {showAnnotations ? <Eye className="w-4 h-4" /> : <EyeOff className="w-4 h-4" />}
-                        </Button>
-                      </TooltipTrigger>
-                      <TooltipContent>{showAnnotations ? 'Hide' : 'Show'} Annotations</TooltipContent>
-                    </Tooltip>
-
-                    <Tooltip>
-                      <TooltipTrigger asChild>
-                        <Button
-                          size="sm"
-                          variant="ghost"
-                          className="text-white hover:bg-gray-700"
-                          onClick={() => onViewportAction('zoomReset')}
-                          data-testid="tool-zoom-reset"
-                        >
-                          <ZoomReset className="w-4 h-4" />
-                        </Button>
-                      </TooltipTrigger>
-                      <TooltipContent>Zoom Reset</TooltipContent>
-                    </Tooltip>
-
-                    <Tooltip>
-                      <TooltipTrigger asChild>
-                        <Button
-                          size="sm"
-                          variant="ghost"
-                          className="text-white hover:bg-gray-700"
-                          onClick={() => onActivateTool('showDicomTags')}
-                          data-testid="tool-dicom-tags"
-                        >
-                          <FileText className="w-4 h-4" />
-                        </Button>
-                      </TooltipTrigger>
-                      <TooltipContent>Show DICOM Tags</TooltipContent>
-                    </Tooltip>
-                  </div>
+                  <Tooltip>
+                    <TooltipTrigger asChild>
+                      <Button
+                        size="sm"
+                        variant="ghost"
+                        onClick={goToFirstImage}
+                        disabled={currentImageIndex === 0}
+                        className="h-6 w-6 p-0 text-white hover:bg-gray-700 disabled:opacity-50"
+                      >
+                        <SkipBack className="w-3 h-3" />
+                        <SkipBack className="w-3 h-3 -ml-1.5" />
+                      </Button>
+                    </TooltipTrigger>
+                    <TooltipContent>First Image</TooltipContent>
+                  </Tooltip>
                   
-                  {/* Cine Speed Slider */}
-                  <div className="space-y-2">
-                    <div className="flex items-center space-x-2">
-                      <Gauge className="w-4 h-4 text-gray-400" />
-                      <span className="text-xs text-gray-400 w-16">Cine Speed</span>
-                      <Slider
-                        value={[cineSpeed]}
-                        onValueChange={(values) => setCineSpeed(values[0])}
-                        max={100}
-                        step={1}
-                        className="flex-1"
-                      />
-                      <span className="text-xs text-gray-400 w-8">{cineSpeed}%</span>
-                    </div>
-                  </div>
-                </AccordionContent>
-              </AccordionItem>
-
-              {/* Sync Panel */}
-              <AccordionItem value="sync" className="border-gray-700">
-                <AccordionTrigger className="text-white hover:text-gray-300 px-4 py-2">
-                  <div className="flex items-center space-x-2">
-                    <Link className="w-4 h-4" />
-                    <span>Sync</span>
-                  </div>
-                </AccordionTrigger>
-                <AccordionContent className="px-4 pb-4 space-y-3">
-                  <div className="space-y-2">
-                    <div className="flex items-center justify-between">
-                      <span className="text-sm text-gray-300">Sync Scroll</span>
-                      <Switch checked={syncScroll} onCheckedChange={toggleSyncScroll} />
-                    </div>
-                    <div className="flex items-center justify-between">
-                      <span className="text-sm text-gray-300">Sync Zoom</span>
-                      <Switch checked={syncZoom} onCheckedChange={toggleSyncZoom} />
-                    </div>
-                    <div className="flex items-center justify-between">
-                      <span className="text-sm text-gray-300">Sync Window/Level</span>
-                      <Switch checked={syncWindowLevel} onCheckedChange={toggleSyncWindowLevel} />
-                    </div>
-                    <div className="flex items-center justify-between">
-                      <span className="text-sm text-gray-300">Link Viewports</span>
-                      <div className="flex items-center space-x-2">
-                        <Switch checked={viewportsLinked} onCheckedChange={toggleLinkViewports} />
-                        {viewportsLinked ? <Link className="w-4 h-4 text-green-400" /> : <Unlink className="w-4 h-4 text-gray-400" />}
-                      </div>
-                    </div>
-                  </div>
-                </AccordionContent>
-              </AccordionItem>
-
-              {/* Misc Panel */}
-              <AccordionItem value="misc" className="border-gray-700">
-                <AccordionTrigger className="text-white hover:text-gray-300 px-4 py-2">
-                  <div className="flex items-center space-x-2">
-                    <Settings className="w-4 h-4" />
-                    <span>Misc</span>
-                  </div>
-                </AccordionTrigger>
-                <AccordionContent className="px-4 pb-4">
-                  <div className="grid grid-cols-2 gap-2">
-                    <Tooltip>
-                      <TooltipTrigger asChild>
-                        <Button
-                          size="sm"
-                          variant="ghost"
-                          className="text-white hover:bg-gray-700"
-                          onClick={downloadImage}
-                          data-testid="tool-download"
-                        >
-                          <Download className="w-4 h-4" />
-                        </Button>
-                      </TooltipTrigger>
-                      <TooltipContent>Download</TooltipContent>
-                    </Tooltip>
-
-                    <Tooltip>
-                      <TooltipTrigger asChild>
-                        <Button
-                          size="sm"
-                          variant="ghost"
-                          className="text-white hover:bg-gray-700"
-                          data-testid="tool-fullscreen"
-                        >
-                          <Maximize2 className="w-4 h-4" />
-                        </Button>
-                      </TooltipTrigger>
-                      <TooltipContent>Full Screen</TooltipContent>
-                    </Tooltip>
-
-                    <Tooltip>
-                      <TooltipTrigger asChild>
-                        <Button
-                          size="sm"
-                          variant="ghost"
-                          className="text-white hover:bg-gray-700"
-                          data-testid="tool-settings"
-                        >
-                          <Settings className="w-4 h-4" />
-                        </Button>
-                      </TooltipTrigger>
-                      <TooltipContent>Settings</TooltipContent>
-                    </Tooltip>
-
-                    <Tooltip>
-                      <TooltipTrigger asChild>
-                        <Button
-                          size="sm"
-                          variant="ghost"
-                          className="text-white hover:bg-gray-700"
-                          onClick={() => loadImage()}
-                          data-testid="tool-refresh"
-                        >
-                          <RefreshCw className="w-4 h-4" />
-                        </Button>
-                      </TooltipTrigger>
-                      <TooltipContent>Refresh</TooltipContent>
-                    </Tooltip>
-
-                    <Tooltip>
-                      <TooltipTrigger asChild>
-                        <Button
-                          size="sm"
-                          variant="ghost"
-                          className="text-white hover:bg-gray-700"
-                          onClick={resetView}
-                          data-testid="tool-home"
-                        >
-                          <Home className="w-4 h-4" />
-                        </Button>
-                      </TooltipTrigger>
-                      <TooltipContent>Reset View</TooltipContent>
-                    </Tooltip>
-
-                    <Tooltip>
-                      <TooltipTrigger asChild>
-                        <Button
-                          size="sm"
-                          variant="ghost"
-                          className="text-white hover:bg-gray-700"
-                          onClick={() => onActivateTool('darkLightMode')}
-                          data-testid="tool-theme-toggle"
-                        >
-                          {darkMode ? <Sun className="w-4 h-4" /> : <Moon className="w-4 h-4" />}
-                        </Button>
-                      </TooltipTrigger>
-                      <TooltipContent>{darkMode ? 'Light' : 'Dark'} Mode</TooltipContent>
-                    </Tooltip>
-
-                    <Tooltip>
-                      <TooltipTrigger asChild>
-                        <Button
-                          size="sm"
-                          variant="ghost"
-                          className="text-white hover:bg-gray-700"
-                          onClick={printImage}
-                          data-testid="tool-print"
-                        >
-                          <Printer className="w-4 h-4" />
-                        </Button>
-                      </TooltipTrigger>
-                      <TooltipContent>Print</TooltipContent>
-                    </Tooltip>
-
-                    <Tooltip>
-                      <TooltipTrigger asChild>
-                        <Button
-                          size="sm"
-                          variant="ghost"
-                          className="text-white hover:bg-gray-700"
-                          onClick={exportAsPNG}
-                          data-testid="tool-export-png"
-                        >
-                          <FileImage className="w-4 h-4" />
-                        </Button>
-                      </TooltipTrigger>
-                      <TooltipContent>Export PNG</TooltipContent>
-                    </Tooltip>
-                  </div>
-                </AccordionContent>
-              </AccordionItem>
-            </Accordion>
-
-            {/* DICOM Tags Panel - Show when enabled */}
-            {showDicomTags && (
-              <div className="border-t border-gray-700 p-4">
-                <h4 className="text-xs font-medium text-gray-400 mb-2">DICOM Tags</h4>
-                <div className="text-xs text-gray-300 space-y-1">
-                  <div>Patient: {patientInfo?.name || 'N/A'}</div>
-                  <div>Study Date: {patientInfo?.studyDate || 'N/A'}</div>
-                  {imageData && (
+                  <Tooltip>
+                    <TooltipTrigger asChild>
+                      <Button
+                        size="sm"
+                        variant="ghost"
+                        onClick={goToPreviousImage}
+                        disabled={currentImageIndex === 0}
+                        className="h-6 w-6 p-0 text-white hover:bg-gray-700 disabled:opacity-50"
+                      >
+                        <SkipBack className="w-3 h-3" />
+                      </Button>
+                    </TooltipTrigger>
+                    <TooltipContent>Previous Image</TooltipContent>
+                  </Tooltip>
+                  
+                  <Tooltip>
+                    <TooltipTrigger asChild>
+                      <Button
+                        size="sm"
+                        variant={isPlaying ? 'default' : 'ghost'}
+                        onClick={() => setIsPlaying(!isPlaying)}
+                        className="h-6 w-6 p-0 text-white hover:bg-gray-700"
+                      >
+                        {isPlaying ? <Pause className="w-3 h-3" /> : <Play className="w-3 h-3" />}
+                      </Button>
+                    </TooltipTrigger>
+                    <TooltipContent>{isPlaying ? 'Pause' : 'Play'} Slideshow</TooltipContent>
+                  </Tooltip>
+                  
+                  <span className="text-xs text-gray-400 px-2 min-w-16 text-center">
+                    {currentImageIndex + 1} / {images.length}
+                  </span>
+                  
+                  <Tooltip>
+                    <TooltipTrigger asChild>
+                      <Button
+                        size="sm"
+                        variant="ghost"
+                        onClick={goToNextImage}
+                        disabled={currentImageIndex === images.length - 1}
+                        className="h-6 w-6 p-0 text-white hover:bg-gray-700 disabled:opacity-50"
+                      >
+                        <SkipForward className="w-3 h-3" />
+                      </Button>
+                    </TooltipTrigger>
+                    <TooltipContent>Next Image</TooltipContent>
+                  </Tooltip>
+                  
+                  <Tooltip>
+                    <TooltipTrigger asChild>
+                      <Button
+                        size="sm"
+                        variant="ghost"
+                        onClick={goToLastImage}
+                        disabled={currentImageIndex === images.length - 1}
+                        className="h-6 w-6 p-0 text-white hover:bg-gray-700 disabled:opacity-50"
+                      >
+                        <SkipForward className="w-3 h-3" />
+                        <SkipForward className="w-3 h-3 -ml-1.5" />
+                      </Button>
+                    </TooltipTrigger>
+                    <TooltipContent>Last Image</TooltipContent>
+                  </Tooltip>
+                  
+                  {/* Cine Speed Control - Only show when playing */}
+                  {isPlaying && (
                     <>
-                      <div>Image Size: {imageData.width}x{imageData.height}</div>
-                      <div>Pixel Data: {imageData.color ? 'RGB' : 'Grayscale'}</div>
+                      <div className="w-px h-4 bg-gray-600 mx-1" />
+                      <span className="text-xs text-gray-500">Speed:</span>
+                      <div className="flex items-center space-x-1 w-16">
+                        <Slider
+                          value={[cineSpeed]}
+                          onValueChange={(values) => setCineSpeed(values[0])}
+                          max={100}
+                          min={10}
+                          step={10}
+                          className="flex-1"
+                        />
+                      </div>
+                      <span className="text-xs text-gray-500 w-6">{cineSpeed}%</span>
                     </>
                   )}
                 </div>
-              </div>
-            )}
-          </div>
-        </TooltipProvider>
+              )}
 
-        {/* Main Viewer Area */}
-        <div className="flex-1 flex flex-col">
-          {/* Viewer Controls */}
-          <div className="bg-gray-800 p-2 border-b border-gray-700">
-            <div className="flex items-center justify-between">
-              <div className="flex items-center space-x-2">
-                <Button
-                  size="sm"
-                  variant="ghost"
-                  onClick={zoomIn}
-                  className="text-white hover:bg-gray-700"
-                  data-testid="button-zoom-in"
-                >
-                  <ZoomIn className="w-4 h-4" />
-                </Button>
-                
-                <Button
-                  size="sm"
-                  variant="ghost"
-                  onClick={zoomOut}
-                  className="text-white hover:bg-gray-700"
-                  data-testid="button-zoom-out"
-                >
-                  <ZoomOut className="w-4 h-4" />
-                </Button>
-
-                <Button
-                  size="sm"
-                  variant="ghost"
-                  onClick={resetView}
-                  className="text-white hover:bg-gray-700"
-                  data-testid="button-reset"
-                >
-                  <Home className="w-4 h-4" />
-                </Button>
-
-                <Button
-                  size="sm"
-                  variant="ghost"
-                  onClick={rotate}
-                  className="text-white hover:bg-gray-700"
-                  data-testid="button-rotate"
-                >
-                  <RotateCw className="w-4 h-4" />
-                </Button>
-
-                <Button
-                  size="sm"
-                  variant="ghost"
-                  onClick={toggleInvert}
-                  className="text-white hover:bg-gray-700"
-                  data-testid="button-invert"
-                >
-                  <RefreshCw className="w-4 h-4" />
-                </Button>
-
-                <Separator orientation="vertical" className="bg-gray-600 h-6" />
-
-                {/* Multi-frame controls (if applicable) */}
-                <Button
-                  size="sm"
-                  variant="ghost"
-                  className="text-white hover:bg-gray-700"
-                  data-testid="button-prev-frame"
-                >
-                  <SkipBack className="w-4 h-4" />
-                </Button>
-
-                <Button
-                  size="sm"
-                  variant="ghost"
-                  onClick={() => setIsPlaying(!isPlaying)}
-                  className="text-white hover:bg-gray-700"
-                  data-testid="button-play-pause"
-                >
-                  {isPlaying ? <Pause className="w-4 h-4" /> : <Play className="w-4 h-4" />}
-                </Button>
-
-                <Button
-                  size="sm"
-                  variant="ghost"
-                  className="text-white hover:bg-gray-700"
-                  data-testid="button-next-frame"
-                >
-                  <SkipForward className="w-4 h-4" />
-                </Button>
-
-                <span className="text-xs text-gray-400">
-                  {currentFrame} / {totalFrames}
-                </span>
-
-                {/* Multi-image navigation controls */}
-                {showMultiImageControls && (
-                  <>
-                    <Separator orientation="vertical" className="bg-gray-600 h-6" />
-                    
+              {/* Export Tools - Compact */}
+              <div className="flex items-center space-x-1">
+                <Tooltip>
+                  <TooltipTrigger asChild>
                     <Button
                       size="sm"
                       variant="ghost"
-                      onClick={goToFirstImage}
-                      disabled={currentImageIndex === 0}
-                      className="text-white hover:bg-gray-700 disabled:opacity-50"
-                      data-testid="button-first-image"
-                      title="First Image"
+                      onClick={exportCurrentImageAsPNG}
+                      className="h-6 w-6 p-0 text-white hover:bg-gray-700"
                     >
-                      <SkipBack className="w-4 h-4" />
-                      <SkipBack className="w-4 h-4 -ml-2" />
+                      <Download className="w-3 h-3" />
                     </Button>
+                  </TooltipTrigger>
+                  <TooltipContent>Download Image</TooltipContent>
+                </Tooltip>
 
-                    <Button
-                      size="sm"
-                      variant="ghost"
-                      onClick={goToPreviousImage}
-                      disabled={currentImageIndex === 0}
-                      className="text-white hover:bg-gray-700 disabled:opacity-50"
-                      data-testid="button-prev-image"
-                      title="Previous Image"
-                    >
-                      <SkipBack className="w-4 h-4" />
-                    </Button>
-
-                    <span className="text-xs text-gray-400 px-2">
-                      {currentImageIndex + 1} / {images.length}
-                    </span>
-
-                    <Button
-                      size="sm"
-                      variant="ghost"
-                      onClick={goToNextImage}
-                      disabled={currentImageIndex === images.length - 1}
-                      className="text-white hover:bg-gray-700 disabled:opacity-50"
-                      data-testid="button-next-image"
-                      title="Next Image"
-                    >
-                      <SkipForward className="w-4 h-4" />
-                    </Button>
-
-                    <Button
-                      size="sm"
-                      variant="ghost"
-                      onClick={goToLastImage}
-                      disabled={currentImageIndex === images.length - 1}
-                      className="text-white hover:bg-gray-700 disabled:opacity-50"
-                      data-testid="button-last-image"
-                      title="Last Image"
-                    >
-                      <SkipForward className="w-4 h-4" />
-                      <SkipForward className="w-4 h-4 -ml-2" />
-                    </Button>
-                  </>
+                {images.length > 1 && (
+                  <Tooltip>
+                    <TooltipTrigger asChild>
+                      <Button
+                        size="sm"
+                        variant="ghost"
+                        onClick={exportAllImagesToZip}
+                        disabled={isExportingZip}
+                        className="h-6 w-6 p-0 text-white hover:bg-gray-700 relative"
+                      >
+                        {isExportingZip ? (
+                          <div className="w-3 h-3 border-2 border-white border-t-transparent rounded-full animate-spin" />
+                        ) : (
+                          <Archive className="w-3 h-3" />
+                        )}
+                      </Button>
+                    </TooltipTrigger>
+                    <TooltipContent>Export All to ZIP</TooltipContent>
+                  </Tooltip>
                 )}
-              </div>
 
-              <div className="flex items-center space-x-2">
-                <Button
-                  size="sm"
-                  variant="ghost"
-                  onClick={downloadImage}
-                  className="text-white hover:bg-gray-700"
-                  data-testid="button-download"
-                >
-                  <Download className="w-4 h-4" />
-                </Button>
-
-                <Button
-                  size="sm"
-                  variant="ghost"
-                  className="text-white hover:bg-gray-700"
-                  data-testid="button-fullscreen"
-                >
-                  <Maximize2 className="w-4 h-4" />
-                </Button>
-
-                <Button
-                  size="sm"
-                  variant="ghost"
-                  className="text-white hover:bg-gray-700"
-                  data-testid="button-settings"
-                >
-                  <Settings className="w-4 h-4" />
-                </Button>
+                <Tooltip>
+                  <TooltipTrigger asChild>
+                    <Button
+                      size="sm"
+                      variant="ghost"
+                      onClick={resetView}
+                      className="h-6 w-6 p-0 text-white hover:bg-gray-700"
+                    >
+                      <Home className="w-3 h-3" />
+                    </Button>
+                  </TooltipTrigger>
+                  <TooltipContent>Reset View</TooltipContent>
+                </Tooltip>
               </div>
             </div>
           </div>
+        </TooltipProvider>
+      </div>
+
+      <div className="flex flex-1 min-h-0">
+        {/* DICOM Tags Panel - Show when enabled as overlay */}
+        {showDicomTags && (
+          <div className="absolute top-20 left-4 bg-gray-900 border border-gray-700 rounded p-4 z-30 max-w-sm">
+            <h4 className="text-xs font-medium text-gray-400 mb-2">DICOM Tags</h4>
+            <div className="text-xs text-gray-300 space-y-1">
+              <div>Patient: {patientInfo?.name || 'N/A'}</div>
+              <div>Study Date: {patientInfo?.studyDate || 'N/A'}</div>
+              {imageData && (
+                <>
+                  <div>Image Size: {imageData.width}x{imageData.height}</div>
+                  <div>Pixel Data: {imageData.color ? 'RGB' : 'Grayscale'}</div>
+                </>
+              )}
+            </div>
+          </div>
+        )}
+        
+        {/* Main Viewer Area - Full Width */}
+        <div className="flex-1 flex flex-col">
 
           {/* Image Viewport */}
           <div className="flex-1 flex items-center justify-center bg-black relative">
@@ -1775,13 +1733,36 @@ export function DICOMViewer({ imageUrl, imageUrls, initialImageIndex = 0, patien
             
             <div
               ref={viewportRef}
-              className="max-w-full max-h-full bg-black cursor-crosshair"
-              style={{ minHeight: '400px', minWidth: '400px' }}
+              className="w-full h-full bg-black cursor-crosshair relative"
+              style={{ minHeight: '300px', minWidth: '300px' }}
+              onMouseMove={handleMouseMove}
+              onMouseEnter={handleMouseEnter}
+              onMouseLeave={handleMouseLeave}
               data-testid="image-viewport"
             />
+            
+            {/* HU Value Overlay */}
+            {showHUOverlay && currentHU !== null && showHUValues && (
+              <div
+                className="absolute pointer-events-none bg-black bg-opacity-75 text-white px-2 py-1 rounded text-xs z-20 border border-blue-400"
+                style={{
+                  left: `${mousePosition.x + 10}px`,
+                  top: `${mousePosition.y - 30}px`,
+                }}
+              >
+                <div className="flex items-center space-x-1">
+                  <Calculator className="w-3 h-3 text-blue-400" />
+                  <span className="text-blue-400 font-medium">HU:</span>
+                  <span className="font-mono">{formatHUValue(currentHU)}</span>
+                </div>
+                <div className="text-xs text-gray-400 mt-0.5">
+                  x: {Math.round(mousePosition.x)}, y: {Math.round(mousePosition.y)}
+                </div>
+              </div>
+            )}
           </div>
 
-          {/* Status Bar */}
+          {/* Enhanced Status Bar */}
           <div className="bg-gray-800 p-2 border-t border-gray-700">
             <div className="flex items-center justify-between text-xs text-gray-400">
               <div className="flex items-center space-x-4">
@@ -1792,8 +1773,34 @@ export function DICOMViewer({ imageUrl, imageUrls, initialImageIndex = 0, patien
                     <span>Bits: {imageData.color ? '24' : '8'}</span>
                   </>
                 )}
+                {showHUValues && currentHU !== null && (
+                  <div className="flex items-center space-x-1 text-blue-400">
+                    <Calculator className="w-3 h-3" />
+                    <span>HU: {formatHUValue(currentHU)}</span>
+                  </div>
+                )}
+                {mousePosition && (
+                  <span>Cursor: ({Math.round(mousePosition.x)}, {Math.round(mousePosition.y)})</span>
+                )}
+                {images.length > 1 && (
+                  <div className="flex items-center space-x-1 text-purple-400">
+                    <Archive className="w-3 h-3" />
+                    <span>{images.length} Images</span>
+                  </div>
+                )}
               </div>
-              <div>
+              <div className="flex items-center space-x-2">
+                {angleUnit === 'degrees' ? (
+                  <span className="text-green-400">Angles: Degrees (°)</span>
+                ) : (
+                  <span className="text-green-400">Angles: Radians</span>
+                )}
+                {isExportingZip && (
+                  <div className="flex items-center space-x-1 text-orange-400">
+                    <FolderDown className="w-3 h-3" />
+                    <span>Exporting ZIP... {exportProgress}%</span>
+                  </div>
+                )}
                 <span>{isLoading ? 'Loading...' : error ? 'Error' : 'Ready'}</span>
               </div>
             </div>

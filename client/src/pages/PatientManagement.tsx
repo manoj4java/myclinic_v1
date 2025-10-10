@@ -522,8 +522,7 @@ ${htmlContent.replace(/<html[^>]*>|<\/html>|<head[^>]*>[\s\S]*?<\/head>|<body[^>
       }
     },
     enabled: !!selectedPatient?.id,
-    staleTime: 0, // Always refetch
-    cacheTime: 0, // Don't cache
+    staleTime: 0 // Always refetch
   });
 
   // Pagination handlers
@@ -1510,22 +1509,20 @@ ${htmlContent.replace(/<html[^>]*>|<\/html>|<head[^>]*>[\s\S]*?<\/head>|<body[^>
 
       {/* DICOM Viewer Modal */}
       {showDICOMViewer && selectedPatientForDICOM && (
-        <div className="fixed inset-0 bg-black bg-opacity-75 flex items-center justify-center z-50">
-          <div className="bg-white dark:bg-gray-900 p-4 rounded-lg max-w-7xl max-h-full w-full h-full m-4 flex flex-col">
-            <div className="flex items-center justify-between mb-4 pb-2 border-b">
-              <h3 className="text-lg font-semibold" data-testid="dicom-viewer-title">
-                DICOM Viewer: {selectedPatientForDICOM.name} ({getDICOMFilesForPatient(selectedPatientForDICOM).length} files)
-              </h3>
-              <Button
-                variant="ghost"
-                size="sm"
-                onClick={closeDICOMViewer}
-                data-testid="button-close-dicom-viewer"
-              >
-                ✕
-              </Button>
-            </div>
-            <div className="flex-1 overflow-hidden min-h-0">
+        <div className="fixed inset-0 bg-black bg-opacity-90 flex items-center justify-center z-50">
+          <div className="bg-black w-full h-full relative flex flex-col">
+            {/* Compact Close Button - Top Right */}
+            <Button
+              variant="ghost"
+              size="sm"
+              onClick={closeDICOMViewer}
+              data-testid="button-close-dicom-viewer"
+              className="absolute top-2 right-2 z-50 bg-black/50 hover:bg-black/70 text-white border-gray-600 h-8 w-8 p-0 rounded-full"
+            >
+              ✕
+            </Button>
+            
+            <div className="flex-1 overflow-hidden">
               <DICOMViewer
                 imageUrls={getDICOMFilesForPatient(selectedPatientForDICOM)}
                 isDICOM={true}
