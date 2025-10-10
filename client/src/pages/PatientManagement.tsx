@@ -1511,13 +1511,13 @@ ${htmlContent.replace(/<html[^>]*>|<\/html>|<head[^>]*>[\s\S]*?<\/head>|<body[^>
       {showDICOMViewer && selectedPatientForDICOM && (
         <div className="fixed inset-0 bg-black bg-opacity-90 flex items-center justify-center z-50">
           <div className="bg-black w-full h-full relative flex flex-col">
-            {/* Compact Close Button - Top Right */}
+            {/* Compact Close Button - Top Right (positioned to avoid toolbar overlap) */}
             <Button
               variant="ghost"
               size="sm"
               onClick={closeDICOMViewer}
               data-testid="button-close-dicom-viewer"
-              className="absolute top-2 right-2 z-50 bg-black/50 hover:bg-black/70 text-white border-gray-600 h-8 w-8 p-0 rounded-full"
+              className="absolute top-16 right-4 z-50 bg-black/50 hover:bg-black/70 text-white border-gray-600 h-8 w-8 p-0 rounded-full shadow-lg"
             >
               ✕
             </Button>

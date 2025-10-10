@@ -1425,6 +1425,28 @@ export function DICOMViewer({ imageUrl, imageUrls, initialImageIndex = 0, patien
                   </TooltipTrigger>
                   <TooltipContent>Print</TooltipContent>
                 </Tooltip>
+                
+                {/* ZIP Export Button - Always available */}
+                <Tooltip>
+                  <TooltipTrigger asChild>
+                    <Button
+                      size="sm"
+                      variant="ghost"
+                      className="h-6 w-6 p-0 text-white hover:bg-gray-700"
+                      onClick={exportAllImagesToZip}
+                      disabled={isExportingZip || images.length === 0}
+                    >
+                      {isExportingZip ? (
+                        <div className="w-3 h-3 border-2 border-white border-t-transparent rounded-full animate-spin" />
+                      ) : (
+                        <Archive className="w-3 h-3" />
+                      )}
+                    </Button>
+                  </TooltipTrigger>
+                  <TooltipContent>
+                    {isExportingZip ? `Exporting... ${exportProgress}%` : images.length > 1 ? `Export All ${images.length} Images to ZIP` : 'Export Image to ZIP'}
+                  </TooltipContent>
+                </Tooltip>
               </div>
 
               {/* Sync Tools - Compact */}
@@ -1493,13 +1515,19 @@ export function DICOMViewer({ imageUrl, imageUrls, initialImageIndex = 0, patien
               {patientInfo && (
                 <>
                   <div className="bg-blue-900/50 px-2 py-1 rounded">
-                    <span className="text-blue-200 font-medium">{patientInfo.name}</span>
+                    <span className="text-blue-200 font-medium">
+                      {patientInfo.name.split(' ').map(word => 
+                        word.charAt(0).toUpperCase() + word.slice(1).toLowerCase()
+                      ).join(' ')}
+                    </span>
                   </div>
                   <span className="text-gray-400">•</span>
-                  <span className="text-gray-300">{patientInfo.age}Y {patientInfo.sex.toUpperCase()}</span>
+                  <span className="text-gray-300">
+                    {patientInfo.age}Y {patientInfo.sex.charAt(0).toUpperCase()}
+                  </span>
                   <span className="text-gray-400">•</span>
-                  <Badge variant="secondary" className="bg-blue-700 text-blue-100 text-xs">
-                    {isDICOM ? 'DICOM' : 'IMAGE'}
+                  <Badge variant="secondary" className="bg-green-700 text-green-100 text-xs">
+                    Medical Image
                   </Badge>
                 </>
               )}
@@ -1507,10 +1535,10 @@ export function DICOMViewer({ imageUrl, imageUrls, initialImageIndex = 0, patien
 
             {/* Right Section: Navigation & Export */}
             <div className="flex items-center space-x-4">
-              {/* Enhanced Image Navigation Panel - Compact */}
+              {/* Ultra-Compact Image Navigation Panel */}
               {showMultiImageControls && (
-                <div className="flex items-center space-x-1 bg-gray-800 rounded px-2 py-1">
-                  <span className="text-xs text-gray-400 mr-2">Images:</span>
+                <div className="flex items-center space-x-0.5 bg-gray-800 rounded px-1.5 py-1">
+                  <span className="text-xs text-gray-400 mr-1">Img:</span>
                   
                   <Tooltip>
                     <TooltipTrigger asChild>
@@ -1519,13 +1547,13 @@ export function DICOMViewer({ imageUrl, imageUrls, initialImageIndex = 0, patien
                         variant="ghost"
                         onClick={goToFirstImage}
                         disabled={currentImageIndex === 0}
-                        className="h-6 w-6 p-0 text-white hover:bg-gray-700 disabled:opacity-50"
+                        className="h-5 w-5 p-0 text-white hover:bg-gray-700 disabled:opacity-50"
                       >
-                        <SkipBack className="w-3 h-3" />
-                        <SkipBack className="w-3 h-3 -ml-1.5" />
+                        <SkipBack className="w-2.5 h-2.5" />
+                        <SkipBack className="w-2.5 h-2.5 -ml-1" />
                       </Button>
                     </TooltipTrigger>
-                    <TooltipContent>First Image</TooltipContent>
+                    <TooltipContent>First</TooltipContent>
                   </Tooltip>
                   
                   <Tooltip>
@@ -1535,12 +1563,12 @@ export function DICOMViewer({ imageUrl, imageUrls, initialImageIndex = 0, patien
                         variant="ghost"
                         onClick={goToPreviousImage}
                         disabled={currentImageIndex === 0}
-                        className="h-6 w-6 p-0 text-white hover:bg-gray-700 disabled:opacity-50"
+                        className="h-5 w-5 p-0 text-white hover:bg-gray-700 disabled:opacity-50"
                       >
-                        <SkipBack className="w-3 h-3" />
+                        <SkipBack className="w-2.5 h-2.5" />
                       </Button>
                     </TooltipTrigger>
-                    <TooltipContent>Previous Image</TooltipContent>
+                    <TooltipContent>Previous</TooltipContent>
                   </Tooltip>
                   
                   <Tooltip>
@@ -1549,16 +1577,16 @@ export function DICOMViewer({ imageUrl, imageUrls, initialImageIndex = 0, patien
                         size="sm"
                         variant={isPlaying ? 'default' : 'ghost'}
                         onClick={() => setIsPlaying(!isPlaying)}
-                        className="h-6 w-6 p-0 text-white hover:bg-gray-700"
+                        className="h-5 w-5 p-0 text-white hover:bg-gray-700"
                       >
-                        {isPlaying ? <Pause className="w-3 h-3" /> : <Play className="w-3 h-3" />}
+                        {isPlaying ? <Pause className="w-2.5 h-2.5" /> : <Play className="w-2.5 h-2.5" />}
                       </Button>
                     </TooltipTrigger>
-                    <TooltipContent>{isPlaying ? 'Pause' : 'Play'} Slideshow</TooltipContent>
+                    <TooltipContent>{isPlaying ? 'Pause' : 'Play'}</TooltipContent>
                   </Tooltip>
                   
-                  <span className="text-xs text-gray-400 px-2 min-w-16 text-center">
-                    {currentImageIndex + 1} / {images.length}
+                  <span className="text-xs text-gray-300 px-1.5 min-w-12 text-center font-mono bg-gray-900/50 rounded">
+                    {currentImageIndex + 1}/{images.length}
                   </span>
                   
                   <Tooltip>
@@ -1568,12 +1596,12 @@ export function DICOMViewer({ imageUrl, imageUrls, initialImageIndex = 0, patien
                         variant="ghost"
                         onClick={goToNextImage}
                         disabled={currentImageIndex === images.length - 1}
-                        className="h-6 w-6 p-0 text-white hover:bg-gray-700 disabled:opacity-50"
+                        className="h-5 w-5 p-0 text-white hover:bg-gray-700 disabled:opacity-50"
                       >
-                        <SkipForward className="w-3 h-3" />
+                        <SkipForward className="w-2.5 h-2.5" />
                       </Button>
                     </TooltipTrigger>
-                    <TooltipContent>Next Image</TooltipContent>
+                    <TooltipContent>Next</TooltipContent>
                   </Tooltip>
                   
                   <Tooltip>
@@ -1583,13 +1611,13 @@ export function DICOMViewer({ imageUrl, imageUrls, initialImageIndex = 0, patien
                         variant="ghost"
                         onClick={goToLastImage}
                         disabled={currentImageIndex === images.length - 1}
-                        className="h-6 w-6 p-0 text-white hover:bg-gray-700 disabled:opacity-50"
+                        className="h-5 w-5 p-0 text-white hover:bg-gray-700 disabled:opacity-50"
                       >
-                        <SkipForward className="w-3 h-3" />
-                        <SkipForward className="w-3 h-3 -ml-1.5" />
+                        <SkipForward className="w-2.5 h-2.5" />
+                        <SkipForward className="w-2.5 h-2.5 -ml-1" />
                       </Button>
                     </TooltipTrigger>
-                    <TooltipContent>Last Image</TooltipContent>
+                    <TooltipContent>Last</TooltipContent>
                   </Tooltip>
                   
                   {/* Cine Speed Control - Only show when playing */}
@@ -1687,11 +1715,87 @@ export function DICOMViewer({ imageUrl, imageUrls, initialImageIndex = 0, patien
           </div>
         )}
         
-        {/* Main Viewer Area - Full Width */}
-        <div className="flex-1 flex flex-col">
-
-          {/* Image Viewport */}
-          <div className="flex-1 flex items-center justify-center bg-black relative">
+        {/* Main Viewer Area with Optional Left Panel */}
+        <div className="flex-1 flex">
+          
+          {/* Left Panel: Image Thumbnails (only when multiple images) */}
+          {images.length > 1 && (
+            <div className="w-24 bg-gray-900 border-r border-gray-700 flex flex-col p-1 space-y-1 overflow-y-auto">
+              <div className="text-xs text-gray-400 text-center mb-1 font-medium">Images</div>
+              {images.map((imageUrl, index) => (
+                <div
+                  key={index}
+                  className={`
+                    relative cursor-pointer rounded border-2 transition-all overflow-hidden
+                    ${index === currentImageIndex 
+                      ? 'border-blue-500 bg-blue-900/20' 
+                      : 'border-gray-600 hover:border-gray-500 bg-gray-800/50 hover:bg-gray-800'
+                    }
+                  `}
+                  onClick={() => setCurrentImageIndex(index)}
+                  style={{ aspectRatio: '1' }}
+                >
+                  {/* Actual image thumbnail */}
+                  <div className="w-full h-full bg-black relative">
+                    <canvas
+                      className="w-full h-full object-contain"
+                      style={{ 
+                        maxWidth: '100%', 
+                        maxHeight: '100%',
+                        filter: 'brightness(0.8) contrast(1.2)'
+                      }}
+                      ref={(canvas) => {
+                        if (canvas && imageUrl) {
+                          // Create a small preview using cornerstone if available
+                          const ctx = canvas.getContext('2d');
+                          if (ctx) {
+                            canvas.width = 80;
+                            canvas.height = 80;
+                            ctx.fillStyle = '#1a1a1a';
+                            ctx.fillRect(0, 0, 80, 80);
+                            
+                            // Add a simple medical image preview pattern
+                            ctx.strokeStyle = '#4a5568';
+                            ctx.lineWidth = 1;
+                            for (let i = 0; i < 80; i += 8) {
+                              ctx.beginPath();
+                              ctx.moveTo(i, 0);
+                              ctx.lineTo(i, 80);
+                              ctx.stroke();
+                              ctx.beginPath();
+                              ctx.moveTo(0, i);
+                              ctx.lineTo(80, i);
+                              ctx.stroke();
+                            }
+                            
+                            // Add center indicator for medical images
+                            ctx.fillStyle = '#60a5fa';
+                            ctx.fillRect(35, 35, 10, 10);
+                          }
+                        }
+                      }}
+                    />
+                    
+                    {/* Image number overlay */}
+                    <div className="absolute top-0 right-0 bg-black/70 text-white text-xs px-1 rounded-bl">
+                      {index + 1}
+                    </div>
+                    
+                    {/* Active indicator */}
+                    {index === currentImageIndex && (
+                      <div className="absolute inset-0 bg-blue-500/20 flex items-center justify-center">
+                        <div className="w-2 h-2 bg-blue-400 rounded-full animate-pulse" />
+                      </div>
+                    )}
+                  </div>
+                </div>
+              ))}
+            </div>
+          )}
+          
+          {/* Main Image Viewport */}
+          <div className="flex-1 flex flex-col">
+            <div className="flex-1 flex items-center justify-center bg-black relative">
             {isLoading && (
               <div className="absolute inset-0 flex items-center justify-center bg-black bg-opacity-75 z-10">
                 <div className="flex flex-col items-center space-y-3 text-white">
@@ -1804,6 +1908,7 @@ export function DICOMViewer({ imageUrl, imageUrls, initialImageIndex = 0, patien
                 <span>{isLoading ? 'Loading...' : error ? 'Error' : 'Ready'}</span>
               </div>
             </div>
+          </div>
           </div>
         </div>
       </div>
